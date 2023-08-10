@@ -25,10 +25,10 @@ from typing import Optional
 import colav_simulator.common.config_parsing as cp
 import colav_simulator.core.colav.kuwata_vo_alg.kuwata_vo as kvo
 import colav_simulator.core.colav.sbmpc.sbmpc as sb_mpc
-import colav_simulator.core.guidances as guidance
 import colav_simulator.core.colav.cpp_to_py_interfaces.intention_model_interface.build.parameters as im_param
 import colav_simulator.core.colav.cpp_to_py_interfaces.intention_model_interface.build.geometry as im_geom
 import colav_simulator.core.colav.cpp_to_py_interfaces.intention_model_interface.build.intention_model as im
+import colav_simulator.core.guidances as guidance
 import matplotlib.pyplot as plt
 import numpy as np
 #import matplotlib
@@ -44,6 +44,7 @@ class COLAVType(Enum):
     VO = 0  # Kuwata VO, with LOS guidance to provide velocity references.
     SBMPC = 1  # SB-MPC, provide trajectory offsets
     IM = 2 # Intention Model
+    PSBMPC = 3 #Probabilistic SB-MPC
 
 @dataclass
 class LayerConfig:
@@ -52,7 +53,7 @@ class LayerConfig:
     vo: Optional[kvo.VOParams] = field(default_factory = lambda: kvo.VOParams())
     los: Optional[guidance.LOSGuidanceParams] = None
     sbmpc: Optional[sb_mpc.SBMPCParams] = None
-    im: Optional[im_param.IntentionModelParameters] = None #@= field(default_factory = lambda: im_param.default_parameters(num_ships))
+    im: Optional[im_param.IntentionModelParameters] = None #= field(default_factory = lambda: im_param.default_parameters(num_ships))
 
     @classmethod
     def from_dict(cls, config_dict: dict):
@@ -67,6 +68,11 @@ class LayerConfig:
             config.sbmpc = cp.convert_settings_dict_to_dataclass(sb_mpc.SBMPCParams, config_dict["sbmpc"])
 
         if "im" in config_dict:
+            config.im = cp.convert_settings_dict_to_dataclass(im_param.IntentionModelParameters, config_dict["im"])
+
+        #TODO: Add config to psbmpc
+        if "psbmpc" in config_dict:
+            config.sbmpc = cp.convert_settings_dict_to_dataclass(sb_mpc.SBMPCParams, config_dict["sbmpc"])
             config.im = cp.convert_settings_dict_to_dataclass(im_param.IntentionModelParameters, config_dict["im"])
 
         return config
@@ -84,6 +90,10 @@ class LayerConfig:
             config_dict["sbmpc"] = self.sbmpc.to_dict()
 
         if self.im is not None:
+            config_dict["im"] = self.im.to_dict()
+        
+        if self.psbmpc is not None:
+            config_dict["sbmpc"] = self.sbmpc.to_dict()
             config_dict["im"] = self.im.to_dict()
 
         return config_dict
@@ -286,10 +296,11 @@ class IMWrapper(ICOLAV):
     def __init__(self, config: Config, **kwargs) -> None:
         assert config.layer1.im is not None, "IM must be on the first layer for the IM wrapper."
 
-        assert config.layer2.los is not None, "LOS guidance must be on the second layer for the SBMPC wrapper."
+        assert config.layer2.los is not None, "LOS guidance must be on the second layer for the IM wrapper."
         self._los = guidance.LOSGuidance(config.layer2.los)
 
         self.ship_intentions = {}
+        self.parameters = im_param.default_parameters(2)
         #Priors
         self.intention_model_path = "colav_simulator/core/colav/cpp_to_py_interfaces/external/ship_intention_inference/files/intention_models/intention_model_from_code.xdsl"
 
@@ -328,7 +339,7 @@ class IMWrapper(ICOLAV):
         self._t_prev = t
         course_ref = references[2, 0]
         speed_ref = references[3, 0]
-        if t - self._t_run_im_last >= 5.0:
+        if t - self._t_run_im_last >= 2.0: # Change this for faster runtime
             self._t_run_im_last = t
 
             # Intention Model
@@ -350,40 +361,39 @@ class IMWrapper(ICOLAV):
                 sog = np.linalg.norm(np.array([Vx, Vy]))
                 ship_states[do[0]] = np.array([x, y, cog, sog])
 
-            parameters = im_param.default_parameters(len(mmsi_list))
-
             #comment out this section for intention model on dynamic obstacles only
             if os_id in self.ship_intentions:
-                self.ship_intentions[os_id].run_inference(ship_states, mmsi_list)
+                self.ship_intentions[os_id].run_intention_inference(ship_states, mmsi_list, t)
                 x, y = ship_states[os_id][0:2]
                 self.ship_intentions[os_id].save_intention_predictions_to_file(self.intention_prediction_file,\
                                                                                                 x, y, t)
 
-            own_ship_sog = ship_states[os_id][2]
 
             for ship_id in mmsi_list:
                 if ship_id != os_id:
-                    if os_id in self.ship_intentions:
-                        self.ship_intentions[ship_id].run_inference(ship_states, mmsi_list)
+                    if ship_id in self.ship_intentions:
+                        self.ship_intentions[ship_id].run_intention_inference(ship_states, mmsi_list, t)
                         x, y = ship_states[ship_id][0:2]
                         self.ship_intentions[ship_id].save_intention_predictions_to_file(self.intention_prediction_file,\
                                                                                                x, y, t)
                     else:
                         dist = im_geom.evaluateDistance(ship_states[ship_id][im_geom.PX] - ship_states[os_id][im_geom.PX],\
                                                         ship_states[ship_id][im_geom.PY] - ship_states[os_id][im_geom.PY])
-                        if  ((dist < parameters.starting_distance) \
+
+                        own_ship_sog = ship_states[os_id][3]
+                        if  ((dist < self.parameters.starting_distance) \
                              and (own_ship_sog > 0.1)):
 
                             #comment out this section for intention model on dynamic obstacles only
                             if os_id not in self.ship_intentions:
                                 self.ship_intentions[os_id] = im.IntentionModel(self.intention_model_path \
-                                                                                                 , parameters \
+                                                                                                 , self.parameters \
                                                                                                  , os_id \
                                                                                                  , ship_states)
 
                             if ship_id not in self.ship_intentions:
                                 self.ship_intentions[ship_id] = im.IntentionModel(self.intention_model_path \
-                                                                                        , parameters \
+                                                                                        , self.parameters \
                                                                                         , ship_id \
                                                                                          , ship_states)
 
@@ -425,6 +435,138 @@ class IMWrapper(ICOLAV):
 
         return plt_handles
 
+#TODO: Implement MPC part
+class PSBMPCWrapper(ICOLAV):
+    """PSBMPC wrapper"""
+
+    def __init__(self, config: Config, **kwargs) -> None:
+        #TODO: Check if this is the correct structure
+        assert config.layer1.im is not None, "IM must be on the first layer for the PSBMPC wrapper."
+
+        assert config.layer2.sbmpc is not None, "SBMPC must be on the first layer for the PSBMPC wrapper."
+        self._sbmpc = sb_mpc.SBMPC(config.layer2.sbmpc)
+
+        assert config.layer3.los is not None, "LOS guidance must be on the second layer for the PSBMPC wrapper."
+        self._los = guidance.LOSGuidance(config.layer3.los)
+
+        # Intention Model
+        self.ship_intentions = {}
+        self.parameters = im_param.default_parameters(2) #NOTE: IM currently only works for 2 ships
+        # IM Priors
+        self.intention_model_path = "colav_simulator/core/colav/cpp_to_py_interfaces/external/ship_intention_inference/files/intention_models/intention_model_from_code.xdsl"
+
+        #For writing IM to file
+        self.intention_prediction_file = "output/intention_files/intention_file.csv"
+        self.trajectory_prediction_file = "output/intention_files/trajectory_file.csv"
+        with open(self.intention_prediction_file, 'w') as intentionFile:
+            intentionFile.write("mmsi,x,y,time,colreg_compliant,good_seamanship,unmodeled_behaviour,has_turned_portwards,has_turned_starboardwards,change_in_speed,is_changing_course,CR_PS,CR_SS,HO,OT_en,OT_ing,priority_lower,priority_similar,priority_higher,risk_of_collision,current_risk_of_collision,start\n")
+        with open(self.trajectory_prediction_file, 'w') as intentionFile:
+            intentionFile.write("mmsi,time,traj_id,x,y,prob\n")
+
+
+        self._t_prev = 0.0
+        self._initialized = False
+        self._t_run_im_last = 0.0
+        self._t_run_psbmpc_last = 0.0
+        self._speed_os_best = 1.0
+        self._course_os_best = 0.0
+
+    def plan(
+        self,
+        t: float,
+        waypoints: np.ndarray,
+        speed_plan: np.ndarray,
+        ownship_state: np.ndarray,
+        do_list: list,
+        enc: Optional[ENC] = None,
+        goal_state: Optional[np.ndarray] = None,
+        **kwargs
+    ) -> np.ndarray:
+        if not self._initialized:
+            self._t_prev = t
+            self._initialized = True
+        
+        #Formate data to be compatible with IM
+        ship_states = im.IntVector4dMap()
+        mmsi_list = im.IntVector()
+
+        #TODO: ownship ID needs to be in ship list
+        os_id = 0
+        mmsi_list.append(os_id)
+        x, y, psi, u, v, r = ownship_state
+        cog = psi
+        sog = np.linalg.norm(np.array([u,v]))
+        ship_states[os_id] = np.array([x, y, cog, sog])
+
+        for do in do_list:
+            mmsi_list.append(do[0])
+            x, y, Vx, Vy = do[1]
+            cog = np.arctan2(Vy, Vx)
+            sog = np.linalg.norm(np.array([Vx, Vy]))
+            ship_states[do[0]] = np.array([x, y, cog, sog])
+
+        # Intention Model
+        if t - self._t_run_im_last >= 2.0: # Change this for faster runtime
+            self._t_run_im_last = t
+
+            #Calculates intentions. If not initialized, will initialize if distance is small enough and sog is big enough
+            for ship_id in mmsi_list:
+                if ship_id != os_id:
+                    if ship_id in self.ship_intentions:
+                        self.ship_intentions[ship_id].run_intention_inference(ship_states, mmsi_list, t)
+                        x, y = ship_states[ship_id][0:2]
+
+                        #Comment this part out if you do not want to save to file
+                        self.ship_intentions[ship_id].save_intention_predictions_to_file(self.intention_prediction_file,\
+                                                                                               x, y, t)
+                    else:
+                        dist = im_geom.evaluateDistance(ship_states[ship_id][im_geom.PX] - ship_states[os_id][im_geom.PX],\
+                                                        ship_states[ship_id][im_geom.PY] - ship_states[os_id][im_geom.PY])
+
+                        own_ship_sog = ship_states[os_id][3]
+                        if  ((dist < self.parameters.starting_distance) \
+                             and (own_ship_sog > 0.1)):
+                            self.ship_intentions[ship_id] = im.IntentionModel(self.intention_model_path \
+                                                                                    , self.parameters \
+                                                                                    , ship_id \
+                                                                                    , ship_states)
+
+        #Trajectory probability predictions
+        dt = 5.0 #Needs to be the same as t - self._t_run_psbmpc_last ? Needs to be same timestep as trajectories
+        trajectory_candidates = {} #TODO: Needs to be a dict with key: int traj_id, val: 4x traj_len np array, where rows are x,y,cog,sog
+        for ship_id in mmsi_list:
+            if (ship_id != os_id) and (ship_id in self.ship_intentions):
+                #TODO: Change time_into_trajectory in parameters.h to be at the time step with the biggest deviation in cog. Might be a tuning parameter
+                self.ship_intentions[ship_id].run_trajectory_inference(ship_states, mmsi_list, trajectory_candidates, dt)
+
+                #Comment this part out if you do not want to save to file
+                self.ship_intentions[ship_id].save_trajectories_to_file(self.trajectory_prediction_file,\
+                                                                   t, trajectory_candidates)
+
+                traj_probabilities = self.ship_intentions[ship_id].get_traj_probabilities() #Returns dict, where key is int traj_id, and val is double traj probability
+
+        references = self._los.compute_references(waypoints, speed_plan, None, ownship_state, t - self._t_prev)
+        self._t_prev = t
+        course_ref = references[2, 0]
+        speed_ref = references[3, 0]
+        if t - self._t_run_psbmpc_last >= 5.0:
+            self._speed_os_best, self._course_os_best = self._sbmpc.get_optimal_ctrl_offset(speed_ref, course_ref, ownship_state, do_list)
+            self._t_run_sbmpc_last = t
+            # print(f"SBMPC course output: {np.rad2deg(course_ref) + self._course_os_best} | Best course offset: {self._course_os_best} | Nominal course ref: {course_ref}")
+            # print(f"SBMPC speed output: {speed_ref * self._speed_os_best} | Best speed offset: {self._speed_os_best} | Nominal speed ref: {speed_ref}")
+        references[2, 0] += np.deg2rad(self._course_os_best)
+        references[3, 0] = speed_ref * self._speed_os_best
+        return references
+
+    def get_current_plan(self) -> np.ndarray:
+        refs = np.zeros((9, 1))
+        return refs
+
+    def get_colav_data(self) -> dict:
+        return {}
+
+    def plot_results(self, ax_map: plt.Axes, enc: ENC, plt_handles: dict, **kwargs) -> dict:
+        return plt_handles
 
 class COLAVBuilder:
     @classmethod
@@ -443,6 +585,8 @@ class COLAVBuilder:
             colav = SBMPCWrapper(config)
         elif config and config.name == COLAVType.IM:
             colav = IMWrapper(config)
+        elif config and config.name == COLAVType.PSBMPC:
+            colav = PSBMPCWrapper(config)
         else:
             config = Config()
             config.layer2 = LayerConfig()

@@ -533,7 +533,9 @@ class PSBMPCWrapper(ICOLAV):
 
         #Trajectory probability predictions
         dt = 5.0 #Needs to be the same as t - self._t_run_psbmpc_last ? Needs to be same timestep as trajectories
+        
         trajectory_candidates = {} #TODO: Needs to be a dict with key: int traj_id, val: 4x traj_len np array, where rows are x,y,cog,sog
+        trajectory = im.IntMatrixXdMap()
         for ship_id in mmsi_list:
             if (ship_id != os_id) and (ship_id in self.ship_intentions):
                 #TODO: Change time_into_trajectory in parameters.h to be at the time step with the biggest deviation in cog. Might be a tuning parameter

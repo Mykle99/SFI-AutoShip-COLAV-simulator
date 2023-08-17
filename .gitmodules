@@ -1,4 +1,3 @@
 [submodule "colav_simulator/core/colav/cpp_to_py_interfaces"]
 	path = colav_simulator/core/colav/cpp_to_py_interfaces
 	url = git@github.com:NTNU-Autoship-Internal/pybind_im_and_psbmpc.git
-	branch = main

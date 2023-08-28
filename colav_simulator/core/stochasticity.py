@@ -35,6 +35,7 @@ class GaussMarkovDisturbanceParams:
     @classmethod
     def from_dict(cls, config_dict: dict):
         params = GaussMarkovDisturbanceParams()
+        params.constant = config_dict["constant"]
         params.initial_speed = config_dict["initial_speed"]
         params.initial_direction = np.deg2rad(config_dict["initial_direction"])
         params.speed_range = tuple(config_dict["speed_range"])
@@ -43,7 +44,6 @@ class GaussMarkovDisturbanceParams:
         params.mu_direction = config_dict["mu_direction"]
         params.sigma_speed = config_dict["sigma_speed"]
         params.sigma_direction = config_dict["sigma_direction"]
-        params.constant = config_dict["constant"]
 
     def to_dict(self) -> dict:
         config_dict = {
@@ -66,7 +66,7 @@ class Config:
 
     wind: Optional[GaussMarkovDisturbanceParams] = None
     waves: Optional[dict] = None
-    currents: Optional[GaussMarkovDisturbanceParams] = GaussMarkovDisturbanceParams()
+    currents: Optional[GaussMarkovDisturbanceParams] = None
 
     @classmethod
     def from_dict(cls, config_dict: dict):

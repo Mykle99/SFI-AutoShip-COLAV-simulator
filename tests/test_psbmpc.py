@@ -16,11 +16,11 @@ import numpy as np
 if __name__ == "__main__":
 
     # chose which test to perform
-    print("Chose which test to perform by setting the bools:\n"
-        '"test_manual", "test_dict" and "test_from_yaml"')
-    test_manual = False
+    print("\nChose which test to perform by setting the bools:\n"
+        '"test_manual", "test_dict" and "test_from_yaml"\n')
+    test_manual = True
     test_dict = False
-    test_from_yaml = True
+    test_from_yaml = False
 
     if test_manual:
 
@@ -259,7 +259,7 @@ if __name__ == "__main__":
     elif test_from_yaml:
         
         # not completed due to psbmpcI and np in params
-        print("head_on_psbmpc.yaml in the scenarios folder can be used "
+        print("\nhead_on_psbmpc.yaml in the scenarios folder can be used "
             "with this test. The file can be chosen in the simulator.yaml file "
             "in the config folder. (In simulator.yaml; set simulator: "
             'scenario files: ["head_on_psbmpc.yaml])'

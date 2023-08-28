@@ -2,7 +2,7 @@
     ship.py
 
     Summary:
-        Contains class definitions for ship classes.
+        Contains class definition for the Ship, representing an agent in the simulator.
         Every ship class must adhere to the interface
         IShip and must be built by a ShipBuilder.
 
@@ -19,6 +19,7 @@ import colav_simulator.core.controllers as controllers
 import colav_simulator.core.guidances as guidances
 import colav_simulator.core.models as models
 import colav_simulator.core.sensing as sensing
+import colav_simulator.core.stochasticity as stochasticity
 import colav_simulator.core.tracking.trackers as trackers
 import matplotlib.pyplot as plt
 import numpy as np
@@ -161,7 +162,7 @@ class ShipBuilder:
         """
         if config:
             model = cls.construct_model(config.model)
-            controller = cls.construct_controller(config.controller)
+            controller = cls.construct_controller(model.params, config.controller)
             sensors = cls.construct_sensors(config.sensors)
             tracker = cls.construct_tracker(sensors, config.tracker)
             guidance_alg = None
@@ -172,7 +173,7 @@ class ShipBuilder:
                 colav_alg = cls.construct_colav(config.colav)
         else:
             model = cls.construct_model()
-            controller = cls.construct_controller()
+            controller = cls.construct_controller(model.params)
             sensors = cls.construct_sensors()
             tracker = cls.construct_tracker(sensors)
             guidance_alg = cls.construct_guidance()
@@ -197,8 +198,8 @@ class ShipBuilder:
         return guidances.GuidanceBuilder.construct_guidance(config)
 
     @classmethod
-    def construct_controller(cls, config: Optional[controllers.Config] = None) -> controllers.IController:
-        return controllers.ControllerBuilder.construct_controller(config)
+    def construct_controller(cls, model_params: Any, config: Optional[controllers.Config] = None) -> controllers.IController:
+        return controllers.ControllerBuilder.construct_controller(model_params, config)
 
     @classmethod
     def construct_model(cls, config: Optional[models.Config] = None) -> models.IModel:
@@ -268,7 +269,7 @@ class Ship(IShip):
         self._last_valid_idx: int = -1  # Index of last valid AIS message in predefined trajectory
         self.t_start: float = 0.0  # The time when the ship appears in the simulation
         self.t_end: float = 1e12  # The time when the ship disappears from the simulation
-        self._model, self._controller, self._guidance, self.sensors, self._tracker, self._colav = ShipBuilder.construct_ship(config)
+        self._model, self._controller, self._guidance, self._sensors, self._tracker, self._colav = ShipBuilder.construct_ship(config)
 
         if model is not None:
             self._model = model
@@ -323,13 +324,7 @@ class Ship(IShip):
         if config.mmsi != -1:
             self._mmsi = config.mmsi
 
-    def plan(
-        self,
-        t: float,
-        dt: float,
-        do_list: list,
-        enc: Optional[senc.ENC] = None,
-    ) -> np.ndarray:
+    def plan(self, t: float, dt: float, do_list: list, enc: Optional[senc.ENC] = None, w: Optional[stochasticity.DisturbanceData] = None) -> np.ndarray:
 
         # Return the AIS trajectory if it is defined, i.e. the ship is following a predefined trajectory.
         if self._trajectory.size > 0:
@@ -347,6 +342,7 @@ class Ship(IShip):
                 do_list,
                 enc,
                 self._goal_state,
+                w,
                 os_length=self._model.params.length,
                 os_width=self._model.params.width,
                 os_draft=self._model.params.draft,
@@ -356,7 +352,7 @@ class Ship(IShip):
         self._references = self._guidance.compute_references(self._waypoints, self._speed_plan, None, self._state, dt)
         return self._references
 
-    def forward(self, dt: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def forward(self, dt: float, w: Optional[stochasticity.DisturbanceData] = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Predicts the ship state dt seconds forward in time.
 
         If the ship is following a predefined trajectory,
@@ -365,6 +361,7 @@ class Ship(IShip):
 
         Args:
             dt (float): Time step (s) in the prediction.
+            w (Optional[stochasticity.DisturbanceData], optional): The disturbance to apply to the ship. Defaults to None.
 
         Returns:
             Tuple[np.ndarray, np.ndarray, np.ndarray]: The new state dt seconds ahead,
@@ -390,9 +387,9 @@ class Ship(IShip):
         if dt <= 0.0:
             return self._state, np.empty(3), np.empty(9)
 
-        u = self._controller.compute_inputs(self._references[:, 0], self._state, dt, self._model)
+        u = self._controller.compute_inputs(self._references[:, 0], self._state, dt)
 
-        self._state = erk4_integration_step(self._model.dynamics, self._model.bounds, self._state, u, dt)
+        self._state = erk4_integration_step(self._model.dynamics, self._model.bounds, self._state, u, w, dt)
         return self._state, u, self._references[:, 0]
 
     def track_obstacles(self, t: float, dt: float, true_do_states: list) -> Tuple[list, list]:

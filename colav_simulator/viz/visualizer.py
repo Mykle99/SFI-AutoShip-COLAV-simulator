@@ -24,10 +24,6 @@ from scipy.stats import chi2, norm
 from seacharts.enc import ENC
 from shapely.geometry import Polygon
 
-plt.rcParams.update(matplotlib.rcParamsDefault)
-matplotlib.rcParams["pdf.fonttype"] = 42
-matplotlib.rcParams["ps.fonttype"] = 42
-
 
 @dataclass
 class Config:
@@ -39,7 +35,6 @@ class Config:
     show_waypoints: bool = False
     show_measurements: bool = False
     show_liveplot_tracks: bool = True
-    save_animation: bool = True
     show_results: bool = True
     show_target_tracking_results: bool = True
     show_trajectory_tracking_results: bool = True
@@ -196,8 +191,13 @@ class Visualizer:
             - enc (ENC): ENC object containing the map data.
             - ship_list (list): List of configured ships in the simulation.
         """
+
         if not self._config.show_liveplot:
             return
+
+        plt.rcParams.update(matplotlib.rcParamsDefault)
+        matplotlib.rcParams["pdf.fonttype"] = 42
+        matplotlib.rcParams["ps.fonttype"] = 42
 
         xlimits, ylimits = self.find_plot_limits(ship_list[0])
 
@@ -569,6 +569,10 @@ class Visualizer:
         if not self._config.show_results:
             return [], []
 
+        plt.rcParams.update(matplotlib.rcParamsDefault)
+        matplotlib.rcParams["pdf.fonttype"] = 42
+        matplotlib.rcParams["ps.fonttype"] = 42
+
         if save_file_path is None:
             save_file_path = dp.figure_output / "scenario_ne.pdf"
         else:
@@ -590,8 +594,8 @@ class Visualizer:
             if os_colav_data and "mpc_soln" in os_colav_data:
                 mpc_soln = os_colav_data["mpc_soln"]
                 t_solve.append(mpc_soln["t_solve"])
-                cost_vals.append(mpc_soln["cost_vals"])
-                n_iters.append(mpc_soln["n_iters"])
+                cost_vals.append(mpc_soln["cost_val"])
+                n_iters.append(mpc_soln["n_iter"])
                 final_residuals.append(mpc_soln["final_residuals"])
         os_colav_stats = {"t_solve": t_solve, "cost_vals": cost_vals, "n_iters": n_iters, "final_residuals": final_residuals}
 
@@ -608,7 +612,7 @@ class Visualizer:
         ax_map = fig_map.add_subplot(projection=enc.crs)
         mapf.plot_background(ax_map, enc)
         ax_map.margins(x=self._config.margins[0], y=self._config.margins[0])
-        xlimits, ylimits = self.find_plot_limits(ship_list[0])
+        xlimits, ylimits = self.find_plot_limits(ship_list[0], buffer=0.0)
         plt.show(block=False)
 
         figs_tracking: list = []
@@ -836,8 +840,10 @@ class Visualizer:
         dist2closest_grounding_hazard = np.linalg.norm(distance_vectors, axis=0)
         if n_do == 0:
             axes = [axes]
-        axes[0].plot(sim_times, dist2closest_grounding_hazard, "b", label="Distance to closest grounding hazard")
-        axes[0].plot(sim_times, d_safe_so * np.ones_like(sim_times), "r--", label="Minimum safety margin")
+        # axes[0].plot(sim_times, dist2closest_grounding_hazard, "b", label="Distance to closest grounding hazard")
+        # axes[0].plot(sim_times, d_safe_so * np.ones_like(sim_times), "r--", label="Minimum safety margin")
+        axes[0].semilogy(sim_times, dist2closest_grounding_hazard, "b", label="Distance to closest grounding hazard")
+        axes[0].semilogy(sim_times, d_safe_so * np.ones_like(sim_times), "r--", label="Minimum safety margin")
         axes[0].set_ylabel("Distance [m]")
         axes[0].set_xlabel("Time [s]")
         axes[0].legend()
@@ -852,8 +858,10 @@ class Visualizer:
             do_true_states_j = mhm.convert_csog_state_to_vxvy_state(do_true_states_j)
 
             dist2do_j = np.linalg.norm(do_true_states_j[:2, :] - os_traj[:2, :], axis=0)
-            axes[j + 1].plot(sim_times, dist2do_j, "b", label=f"Distance to DO{do_labels[j]}")
-            axes[j + 1].plot(sim_times, d_safe_do * np.ones_like(sim_times), "r--", label="Minimum safety margin")
+            # axes[j + 1].plot(sim_times, dist2do_j, "b", label=f"Distance to DO{do_labels[j]}")
+            # axes[j + 1].plot(sim_times, d_safe_do * np.ones_like(sim_times), "r--", label="Minimum safety margin")
+            axes[j + 1].semilogy(sim_times, dist2do_j, "b", label=f"Distance to DO{do_labels[j]}")
+            axes[j + 1].semilogy(sim_times, d_safe_do * np.ones_like(sim_times), "r--", label="Minimum safety margin")
             axes[j + 1].set_ylabel("Distance [m]")
             axes[j + 1].set_xlabel("Time [s]")
             axes[j + 1].legend()
@@ -888,41 +896,39 @@ class Visualizer:
         )
 
         axes["x"].plot(sim_times[:n_samples], trajectory[0, :n_samples], color="xkcd:blue", linewidth=linewidth, label="actual")
-        axes["x"].plot(sim_times[:n_samples], reference_trajectory[0, :n_samples], color="xkcd:red", linestyle="--", linewidth=linewidth, label="reference")
+        axes["x"].plot(sim_times[:n_samples], reference_trajectory[0, :n_samples], color="xkcd:red", linestyle="--", linewidth=linewidth, label="nominal")
         # axes["x"].set_xlabel("Time [s]")
         axes["x"].set_ylabel("North [m]")
         axes["x"].legend()
 
         axes["y"].plot(sim_times[:n_samples], trajectory[1, :n_samples], color="xkcd:blue", linewidth=linewidth, label="actual")
-        axes["y"].plot(sim_times[:n_samples], reference_trajectory[1, :n_samples], color="xkcd:red", linestyle="--", linewidth=linewidth, label="reference")
+        axes["y"].plot(sim_times[:n_samples], reference_trajectory[1, :n_samples], color="xkcd:red", linestyle="--", linewidth=linewidth, label="nominal")
         # axes["y"].set_xlabel("Time [s]")
         axes["y"].set_ylabel("East [m]")
         axes["y"].legend()
 
         axes["psi"].plot(sim_times[:n_samples], trajectory[2, :n_samples] * 180.0 / np.pi, color="xkcd:blue", linewidth=linewidth, label="actual")
         axes["psi"].plot(
-            sim_times[:n_samples], reference_trajectory[2, :n_samples] * 180.0 / np.pi, color="xkcd:red", linestyle="--", linewidth=linewidth, label="reference"
+            sim_times[:n_samples], reference_trajectory[2, :n_samples] * 180.0 / np.pi, color="xkcd:red", linestyle="--", linewidth=linewidth, label="nominal"
         )
         # axes["psi"].set_xlabel("Time [s]")
         axes["psi"].set_ylabel("Heading [deg]")
         axes["psi"].legend()
 
         axes["u"].plot(sim_times[:n_samples], trajectory[3, :n_samples], color="xkcd:blue", linewidth=linewidth, label="actual")
-        axes["u"].plot(sim_times[:n_samples], reference_trajectory[3, :n_samples], color="xkcd:red", linestyle="--", linewidth=linewidth, label="reference")
+        axes["u"].plot(sim_times[:n_samples], reference_trajectory[3, :n_samples], color="xkcd:red", linestyle="--", linewidth=linewidth, label="nominal")
         # axes["u"].set_xlabel("Time [s]")
         axes["u"].set_ylabel("Surge [m/s]")
         axes["u"].legend()
 
         axes["v"].plot(sim_times[:n_samples], trajectory[4, :n_samples], color="xkcd:blue", linewidth=linewidth, label="actual")
-        axes["v"].plot(sim_times[:n_samples], reference_trajectory[4, :n_samples], color="xkcd:red", linestyle="--", linewidth=linewidth, label="reference")
+        axes["v"].plot(sim_times[:n_samples], reference_trajectory[4, :n_samples], color="xkcd:red", linestyle="--", linewidth=linewidth, label="nominal")
         # axes["v"].set_xlabel("Time [s]")
         axes["v"].set_ylabel("Sway [m/s]")
         axes["v"].legend()
 
         axes["r"].plot(sim_times[:n_samples], trajectory[5, :n_samples] * 180.0 / np.pi, color="xkcd:blue", linewidth=linewidth, label="actual")
-        axes["r"].plot(
-            sim_times[:n_samples], reference_trajectory[5, :n_samples] * 180.0 / np.pi, linestyle="--", color="xkcd:red", linewidth=linewidth, label="reference"
-        )
+        axes["r"].plot(sim_times[:n_samples], reference_trajectory[5, :n_samples] * 180.0 / np.pi, linestyle="--", color="xkcd:red", linewidth=linewidth, label="nominal")
         axes["r"].set_xlabel("Time [s]")
         axes["r"].set_ylabel("Yaw [deg/s]")
         axes["r"].legend()

@@ -23,6 +23,7 @@ import colav_simulator.common.math_functions as mf
 import colav_simulator.common.miscellaneous_helper_methods as mhm
 import colav_simulator.common.paths as dp  # Default paths
 import colav_simulator.core.ship as ship
+import colav_simulator.core.stochasticity as stoch
 import numpy as np
 import seacharts.enc as senc
 import yaml
@@ -67,7 +68,7 @@ class ScenarioConfig:
     new_load_of_map_data: bool  # If True, seacharts will process .gdb files into shapefiles. If false, it will use existing shapefiles.
     map_size: Optional[Tuple[float, float]] = None  # Size of the map considered in the scenario (in meters) referenced to the origin.
     map_origin_enu: Optional[Tuple[float, float]] = None  # Origin of the map considered in the scenario (in UTM coordinates per now)
-    map_tolerance: Optional[int] = 2  # Tolerance for the map simplification process
+    map_tolerance: Optional[int] = 0  # Tolerance for the map simplification process
     map_buffer: Optional[int] = 0  # Buffer for the map simplification process
     ais_data_file: Optional[Path] = None  # Path to the AIS data file, if considered
     ship_data_file: Optional[Path] = None  # Path to the ship information data file associated with AIS data, if considered
@@ -77,6 +78,7 @@ class ScenarioConfig:
     n_random_ships_range: Optional[list] = None  # Variable range of number of random ships in the scenario, excluding the own-ship, if considered
     ship_list: Optional[list] = None  # List of ship configurations for the scenario, does not have to be equal to the number of ships in the scenario.
     filename: Optional[str] = None  # Filename of the scenario, stored after creation
+    stochasticity: Optional[stoch.Config] = None  # Configuration class containing stochasticity parameters for the scenario
 
     def to_dict(self) -> dict:
         output = {
@@ -92,6 +94,7 @@ class ScenarioConfig:
             "map_tolerance": self.map_tolerance,
             "map_buffer": self.map_buffer,
             "new_load_of_map_data": self.new_load_of_map_data,
+            "stochasticity": self.stochasticity,
             "ship_list": [],
         }
 
@@ -118,6 +121,9 @@ class ScenarioConfig:
 
         if self.filename is not None:
             output["filename"] = self.filename
+
+        if self.stochasticity is not None:
+            output["stochasticity"] = self.stochasticity.to_dict()
 
         if self.ship_list is not None:
             for ship_config in self.ship_list:
@@ -178,6 +184,9 @@ class ScenarioConfig:
         if "filename" in config_dict:
             config.filename = config_dict["filename"]
 
+        if "stochasticity" in config_dict:
+            config.stochasticity = stoch.Config.from_dict(config_dict["stochasticity"])
+
         if "ship_list" in config_dict:
             config.ship_list = []
             for ship_config in config_dict["ship_list"]:
@@ -234,9 +243,9 @@ class ScenarioGenerator:
         """Constructor for the ScenarioGenerator.
 
         Args:
-            config (Config): Configuration object containing all parameters/settings related to the creation of scenarios.
-            config_file (Path, optional): Absolute path to the generator config file. Defaults to dp.scenario_generator_config.
-            **kwargs: Keyword arguments for the ScenarioGenerator, can be e.g.:
+            - config (Config): Configuration object containing all parameters/settings related to the creation of scenarios.
+            - config_file (Path, optional): Absolute path to the generator config file. Defaults to dp.scenario_generator_config.
+            - **kwargs: Keyword arguments for the ScenarioGenerator, can be e.g.:
                     new_data (bool): Flag determining whether or not to read ENC data from shapefiles again.
         """
         if config:
@@ -251,7 +260,10 @@ class ScenarioGenerator:
         """Configures the ENC object based on the scenario config file.
 
         Args:
-            scenario_config (ScenarioConfig): Scenario config object.
+            - scenario_config (ScenarioConfig): Scenario config object.
+
+        Returns:
+            - (senc.ENC): Configured ENC object.
         """
         # print(f"ENC map size: {scenario_config.map_size}")
         # print(f"ENC map origin: {scenario_config.map_origin_enu}")
@@ -273,11 +285,12 @@ class ScenarioGenerator:
         """Loads all episode files for a given scenario from a folder that match the specified `scenario_name`.
 
         Args:
-            folder (Path): Path to folder containing scenario files.
-            scenario_name (str): Name of the scenario.
+            - folder (Path): Path to folder containing scenario files.
+            - scenario_name (str): Name of the scenario.
+            - verbose (bool, optional): Flag determining whether or not to print progress. Defaults to False.
 
         Returns:
-            list: List of scenario files.
+            - Tuple[list, senc.ENC]: List of scenario files and the corresponding ENC object.
         """
         scenario_episode_list = []
         first = True
@@ -305,10 +318,10 @@ class ScenarioGenerator:
         NOTE: The scenario ENC object is not initialized here, but in the `load_scenario_from_folder` function.
 
         Args:
-            config_file (Path): Absolute path to the scenario config file.
+            - config_file (Path): Absolute path to the scenario config file.
 
         Returns:
-            Tuple[list, ScenarioConfig]: List of ships in the scenario with initialized poses and plans, the final scenario config object.
+            - Tuple[list, ScenarioConfig]: List of ships in the scenario with initialized poses and plans, the final scenario config object.
         """
         config = cp.extract(ScenarioConfig, config_file, dp.scenario_schema)
         ship_list = []
@@ -325,10 +338,11 @@ class ScenarioGenerator:
         """Generates scenarios from each of the input file paths.
 
         Args:
-            files (list): List of configuration files to generate scenarios from, as Path objects.
+            - files (list): List of configuration files to generate scenarios from, as Path objects.
+            - verbose (bool, optional): Flag determining whether or not to print progress. Defaults to False.
 
         Returns:
-            list: List of episode config data dictionaries and relevant ENC objects, for each scenario.
+            - list: List of episode config data dictionaries and relevant ENC objects, for each scenario.
         """
         scenario_data_list = []
         for i, scenario_file in enumerate(files):
@@ -348,12 +362,12 @@ class ScenarioGenerator:
         You must provide either a valid scenario config object or a scenario config file path as input.
 
         Args:
-            config (ScenarioConfig, optional): Scenario config object. Defaults to None.
-            config_file (Path, optional): Absolute path to the scenario config file. Defaults to None.
-            enc (ENC, optional): Electronic Navigational Chart object containing the geographical environment. Defaults to None.
+            - config (ScenarioConfig, optional): Scenario config object. Defaults to None.
+            - config_file (Path, optional): Absolute path to the scenario config file. Defaults to None.
+            - enc (ENC, optional): Electronic Navigational Chart object containing the geographical environment. Defaults to None.
 
         Returns:
-            Tuple[list, ENC]: List of scenario episodes, each containing a dictionary of episode information. Also, the corresponding ENC object is returned.
+            - Tuple[list, ENC]: List of scenario episodes, each containing a dictionary of episode information. Also, the corresponding ENC object is returned.
         """
         if config is None:
             assert config_file is not None, "Either scenario_config or scenario_config_file must be specified."
@@ -408,12 +422,12 @@ class ScenarioGenerator:
         Random plans for each ship will be created unless specified in ship_list entries or loaded from AIS data.
 
         Args:
-            config (ScenarioConfig): Scenario config object.
-            ais_ship_data (dict, optional): Dictionary containing AIS ship data. Defaults to None.
-            enc (ENC, optional): Electronic Navigational Chart object containing the geographical environment, to override the existing enc being used. Defaults to None.
+            - config (ScenarioConfig): Scenario config object.
+            - ais_ship_data (dict, optional): Dictionary containing AIS ship data. Defaults to None.
+            - enc (ENC, optional): Electronic Navigational Chart object containing the geographical environment, to override the existing enc being used. Defaults to None.
 
         Returns:
-            Tuple[list, ScenarioConfig]: List of ships in the scenario with initialized poses and plans, the final scenario config object.
+            - Tuple[list, ScenarioConfig]: List of ships in the scenario with initialized poses and plans, the final scenario config object.
         """
         if ais_ship_data is None:
             ship_list = []
@@ -466,12 +480,12 @@ class ScenarioGenerator:
         """Generates ships from AIS data. Their plans can be fully or partially be specified by the AIS trajectory data.
 
         Args:
-            ais_vessel_data_list (list): List of AIS vessel data objects.
-            mmsi_list (list): List of corresponding MMSI numbers for the AIS vessels.
-            config (ScenarioConfig): The scenario configuration.
+            - ais_vessel_data_list (list): List of AIS vessel data objects.
+            - mmsi_list (list): List of corresponding MMSI numbers for the AIS vessels.
+            - config (ScenarioConfig): The scenario configuration.
 
         Returns:
-            dict: Dictionary containing the list of AIS ships, the list of AIS ship configurations, the list of AIS CSOG states and the updated list
+            - dict: Dictionary containing the list of AIS ships, the list of AIS ship configurations, the list of AIS CSOG states and the updated list
             of non-configured ship indices. Also, the idx of the next ship to be configured (if any) is stored.
         """
         output = {}
@@ -543,14 +557,14 @@ class ScenarioGenerator:
         """Generates ships with random plans.
 
         Args:
-            non_cfged_ship_indices (list): List of indices of ships that are not yet configured.
-            ship_list (list): List of already configured ships, to which the random ships will be added.
-            ship_config_list (list): List of final ship configurations, to which the random ships will be added.
-            csog_state_list (list): List of CSOG states of the already configured ships, to which the random ship initial CSOG states will be added.
-            config (ScenarioConfig): The scenario configuration.
+            - non_cfged_ship_indices (list): List of indices of ships that are not yet configured.
+            - ship_list (list): List of already configured ships, to which the random ships will be added.
+            - ship_config_list (list): List of final ship configurations, to which the random ships will be added.
+            - csog_state_list (list): List of CSOG states of the already configured ships, to which the random ship initial CSOG states will be added.
+            - config (ScenarioConfig): The scenario configuration.
 
         Returns:
-            Tuple[list, list, list]: The list of ships, the list of ship configurations, and the list of CSOG states.
+            - Tuple[list, list, list]: The list of ships, the list of ship configurations, and the list of CSOG states.
         """
         # Number of ships that are configured for the scenario
         n_cfg_ships = len(config.ship_list)
@@ -614,15 +628,15 @@ class ScenarioGenerator:
         such that the scenario is of the input type.
 
         Args:
-            scenario_type (ScenarioType): Type of scenario.
-            os_csog_state (np.ndarray): Own-ship COG-SOG state = [x, y, speed, heading].
-            U_min (float, optional): Obstacle minimum speed. Defaults to 1.0.
-            U_max (float, optional): Obstacle maximum speed. Defaults to 15.0.
-            draft (float, optional): Draft of target ship. Defaults to 2.0.
-            min_land_clearance (float, optional): Minimum distance between target ship and land. Defaults to 100.0.
+            - scenario_type (ScenarioType): Type of scenario.
+            - os_csog_state (np.ndarray): Own-ship COG-SOG state = [x, y, speed, heading].
+            - U_min (float, optional): Obstacle minimum speed. Defaults to 1.0.
+            - U_max (float, optional): Obstacle maximum speed. Defaults to 15.0.
+            - draft (float, optional): Draft of target ship. Defaults to 2.0.
+            - min_land_clearance (float, optional): Minimum distance between target ship and land. Defaults to 100.0.
 
         Returns:
-            np.ndarray: Target ship position = [x, y].
+            - np.ndarray: Target ship position = [x, y].
         """
 
         if any(np.isnan(os_csog_state)):
@@ -698,21 +712,21 @@ class ScenarioGenerator:
         self,
         U_min: float = 1.0,
         U_max: float = 15.0,
-        draft: float = 3.0,
+        draft: float = 5.0,
         heading: Optional[float] = None,
         min_land_clearance: float = 100.0,
     ) -> np.ndarray:
         """Creates a random COG-SOG state which adheres to the ship's draft and maximum speed.
 
         Args:
-            U_min (float, optional): Minimum speed of the ship. Defaults to 1.0.
-            U_max (float, optional): Maximum speed of the ship. Defaults to 15.0.
-            draft (float, optional): How deep the ship keel is into the water. Defaults to 5.
-            heading (Optional[float], optional): Heading of the ship in radians. Defaults to None.
-            min_land_clearance (float, optional): Minimum distance to land. Defaults to 100.0.
+            - U_min (float, optional): Minimum speed of the ship. Defaults to 1.0.
+            - U_max (float, optional): Maximum speed of the ship. Defaults to 15.0.
+            - draft (float, optional): How deep the ship keel is into the water. Defaults to 5.
+            - heading (Optional[float]): Heading of the ship in radians. Defaults to None.
+            - min_land_clearance (float, optional): Minimum distance to land. Defaults to 100.0.
 
         Returns:
-            np.ndarray: Array containing the vessel state = [x, y, speed, heading]
+            - np.ndarray: Array containing the vessel state = [x, y, speed, heading]
         """
         x, y = mapf.generate_random_start_position_from_draft(self.enc, draft, min_land_clearance)
         speed = random.uniform(U_min, U_max)
@@ -725,14 +739,14 @@ class ScenarioGenerator:
         """Creates random waypoints starting from a ship position and heading.
 
         Args:
-            x (float): x position (north) of the ship.
-            y (float): y position (east) of the ship.
-            psi (float): heading of the ship in radians.
-            draft (float, optional): How deep the ship keel is into the water. Defaults to 5.
-            n_wps (Optional[int]): Number of waypoints to create.
+            - x (float): x position (north) of the ship.
+            - y (float): y position (east) of the ship.
+            - psi (float): heading of the ship in radians.
+            - draft (float, optional): How deep the ship keel is into the water. Defaults to 5.
+            - n_wps (Optional[int]): Number of waypoints to create.
 
         Returns:
-            np.ndarray: 2 x n_wps array of waypoints.
+            - np.ndarray: 2 x n_wps array of waypoints.
         """
         if n_wps is None:
             n_wps = random.randint(self._config.n_wps_range[0], self._config.n_wps_range[1])
@@ -779,13 +793,13 @@ class ScenarioGenerator:
         """Creates a random speed plan using the input speed and min/max speed of the ship.
 
         Args:
-            U (float): The ship's speed.
-            U_min (float, optional): The ship's minimum speed. Defaults to 1.0.
-            U_max (float, optional): The ship's maximum speed. Defaults to 15.0.
-            n_wps (Optional[int]): Number of waypoints to create.
+            - U (float): The ship's speed.
+            - U_min (float, optional): The ship's minimum speed. Defaults to 1.0.
+            - U_max (float, optional): The ship's maximum speed. Defaults to 15.0.
+            - n_wps (Optional[int]): Number of waypoints to create.
 
         Returns:
-            np.ndarray: 1 x n_wps array containing the speed plan.
+            - np.ndarray: 1 x n_wps array containing the speed plan.
         """
         if n_wps is None:
             n_wps = random.randint(self._config.n_wps_range[0], self._config.n_wps_range[1])
@@ -806,7 +820,7 @@ class ScenarioGenerator:
         """Returns the bounding box of the considered ENC area.
 
         Returns:
-            np.ndarray: Array containing the ENC bounding box = [min_x, min_y, max_x, max_y]
+            - np.ndarray: Array containing the ENC bounding box = [min_x, min_y, max_x, max_y]
         """
         size = self.enc.size
         origin = self.enc.origin
@@ -824,10 +838,10 @@ def save_scenario_episode_definition(scenario_config: ScenarioConfig) -> str:
     Uses the config to create a unique scenario name and filename. The scenario is saved in the default scenario save folder.
 
     Args:
-        scenario_config (ScenarioConfig): Scenario configuration
+        - scenario_config (ScenarioConfig): Scenario configuration
 
     Returns:
-        str: The filename of the saved scenario.
+        - str: The filename of the saved scenario.
     """
     scenario_config_dict: dict = scenario_config.to_dict()
     scenario_config_dict["save_scenario"] = False
@@ -850,10 +864,10 @@ def find_global_map_origin_and_size(config: ScenarioConfig) -> Tuple[Tuple[float
     """Finds the global map origin and size encompassing all ships in the scenario.
 
     Args:
-        config (ScenarioConfig): Scenario configuration
+        - config (ScenarioConfig): Scenario configuration
 
     Returns:
-        Tuple[np.ndarray, np.ndarray]: Global map origin and size
+        - Tuple[np.ndarray, np.ndarray]: Global map origin and size
     """
     assert config.map_origin_enu is not None and config.map_size is not None
     assert config.ship_list is not None
@@ -893,13 +907,13 @@ def find_global_map_origin_and_size(config: ScenarioConfig) -> Tuple[Tuple[float
 
 
 def process_ais_data(config: ScenarioConfig) -> dict:
-    """Processes AIS data from a list of AIS data files, returns a dict containing AIS VesselData, ship MMSIs and the coordinate frame origin and size.
+    """Processes AIS data from file, returns a dict containing AIS VesselData, ship MMSIs and the coordinate frame origin and size.
 
     Args:
-        config (ScenarioConfig): Configuration object containing all parameters/settings related to the creation of a scenario.
+        - config (ScenarioConfig): Configuration object containing all parameters/settings related to the creation of a scenario.
 
     Returns:
-        dict: Dict containing AIS VesselData, ship MMSIs, and the coordinate frame origin and size.
+        - dict: Dictionary containing processed AIS data.
     """
     output = {}
     if config.ais_data_file is not None:

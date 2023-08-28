@@ -62,6 +62,23 @@ def convert_settings_dict_to_dataclass(data_class, config_dict: dict, converter:
     return dacite.from_dict(data_class=data_class, data=config_dict)
 
 
+def convert_settings_dict_to_paramsclass(params_class, config_dict: dict) -> Any:
+    """Converts a settings dictionary to a parameter class (for usage with C++ interface).
+
+    Args:
+        params_class (Any): Parameter class to convert to.
+        config_dict (dict): Dictionary containing the settings.
+
+    Returns:
+        Any: The parameter class.
+    """
+    if hasattr(params_class, "from_dict") and callable(getattr(params_class, "from_dict")):
+        return params_class.from_dict(config_dict)
+    else:
+        
+        raise ValueError("The 'params_class' does not have a callable 'from_dict' method. HEEEEEEEEEEEEEY params_class", type(params_class))
+
+
 def validate(settings: dict, schema: dict) -> None:
     """Validates the settings against the schema.
 

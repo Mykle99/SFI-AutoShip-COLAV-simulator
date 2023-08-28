@@ -144,7 +144,7 @@ class Simulator:
 
                 if self._config.verbose:
                     print(f"\rSimulator: Running scenario episode nr {ep + 1}: {scenario_episode_file}...")
-                sim_data, ship_info, sim_times = self.run_scenario_episode(ship_list, episode_config, scenario_enc, ownship_colav_system)
+                sim_data, ship_info, sim_times = self.run_scenario_episode(ship_list, episode_config, scenario_enc, None, ownship_colav_system)
                 if self._config.verbose:
                     print(f"\rSimulator: Finished running through scenario episode nr {ep + 1}: {scenario_episode_file}.")
 

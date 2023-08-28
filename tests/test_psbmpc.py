@@ -8,7 +8,6 @@ from colav_simulator.core.colav.psbmpc import PSBMPCInterface as psbmpcI
 from colav_simulator.core.colav.im import IMInterface as imI
 
 import colav_simulator.core.colav.colav_interface as ci
-import colav_simulator.core.colav.sbmpc.sbmpc as sb_mpc
 import colav_simulator.core.guidances as guidance
 import numpy as np
 

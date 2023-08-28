@@ -367,6 +367,7 @@ class IMWrapper(ICOLAV):
         do_list: list,
         enc: Optional[ENC] = None,
         goal_state: Optional[np.ndarray] = None,
+        w: Optional[stochasticity.DisturbanceData] = None,
         **kwargs
     ) -> np.ndarray:
         if not self._initialized:
@@ -537,6 +538,7 @@ class PSBMPCWrapper(ICOLAV):
         do_list: list,
         enc: ENC,
         goal_state: Optional[np.ndarray] = None,
+        w: Optional[stochasticity.DisturbanceData] = None,
         V_w: float = 0.0,
         wind_direction: np.ndarray = np.array([0, 0]),
         **kwargs

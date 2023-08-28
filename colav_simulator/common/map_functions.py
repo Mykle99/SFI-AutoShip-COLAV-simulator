@@ -431,3 +431,21 @@ def check_if_segment_crosses_grounding_hazards(enc: ENC, p2: np.ndarray, p1: np.
     crosses_grounding_hazards = intersects_land_or_shore or intersects_relevant_seabed
 
     return crosses_grounding_hazards
+
+
+def from_MultiPolygon_to_ndarray(filtered_relevant_hazards: list[MultiPolygon]) -> list[np.ndarray]:
+    """Converts a list of MultiPolygons to a list of numpy arrays.
+
+    Args:
+        - filtered_relevant_hazards list[MultiPolygon]: The data which is to be converted from "shapely" to "numpy".
+
+    Returns:
+        list[np.ndarray]: The converted data. Now compatible with the C++ binding of PSBMPC::calculate_optimal_offsets().
+    """
+    polygons_numpy = []
+    for multi_poly in filtered_relevant_hazards:
+        for poly in multi_poly.geoms:
+            exterior_poly_coords = np.array(poly.exterior.coords)
+            exterior_poly_coords_array = np.array(exterior_poly_coords, dtype=np.double)
+            polygons_numpy.append(exterior_poly_coords_array)
+    return polygons_numpy

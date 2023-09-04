@@ -18,9 +18,9 @@ if __name__ == "__main__":
     # chose which test to perform
     print("\nChose which test to perform by setting the bools:\n"
         '"test_manual", "test_dict" and "test_from_yaml"\n')
-    test_manual = True
+    test_manual = False
     test_dict = False
-    test_from_yaml = False
+    test_from_yaml = True
 
     if test_manual:
 
@@ -29,23 +29,28 @@ if __name__ == "__main__":
         colav_config.layer1 = ci.LayerConfig()
         colav_config.layer2 = ci.LayerConfig()
         colav_config.layer3 = ci.LayerConfig()
-        colav_config.layer4 = ci.LayerConfig()
-        colav_config.layer5 = ci.LayerConfig()
         colav_builder = ci.COLAVBuilder()
         simulator = Simulator()
 
-        # cpe method
+        # cpe method and number of ships
         cpe_ce = psbmpcI.CPEMethod.CE
         cpe_mcskf = psbmpcI.CPEMethod.MCSKF4D
-
-        # name and layers
         num_ships = 2 # 1 ownship + 1 obstacle ship = 2 ships (IM only works with 2 ships currently)
+
+        # name
         colav_config.name = ci.COLAVType.PSBMPC # "PSBMPC"
-        colav_config.layer1.psbmpc_params = psbmpcI.PSBMPCParams()
-        colav_config.layer2.psbmpc_ownship = psbmpcI.KinematicShip()
-        colav_config.layer3.psbmpc_cpe = psbmpcI.CPE(cpe_ce)
-        colav_config.layer4.im = imI.IMParams.default_parameters(num_ships)
-        colav_config.layer5.los = guidance.LOSGuidanceParams()
+
+        # layer 1
+        colav_config.layer1.psbmpc = psbmpcI.PSBMPCParamsWrapper()
+        colav_config.layer1.psbmpc.psbmpcparams = psbmpcI.PSBMPCParams()
+        colav_config.layer1.psbmpc.ownshipparams = psbmpcI.KinematicShip()
+        colav_config.layer1.psbmpc.cpeparams = psbmpcI.CPE(cpe_ce)
+
+        # layer 2
+        colav_config.layer2.im = imI.IMParams.default_parameters(num_ships)
+
+        # layer 3
+        colav_config.layer3.los = guidance.LOSGuidanceParams()
 
         # running the simulation
         output = simulator.run(ownship_colav_system = colav_builder.construct_colav(config = colav_config))
@@ -61,8 +66,10 @@ if __name__ == "__main__":
         cpe_method = psbmpcI.CPEMethod.CE
         cpe_other_method = psbmpcI.CPEMethod.MCSKF4D
 
-        # setting all setable parameters of the COLAV system in the config_dict
-        psbmpc_params_dict = {
+        # setting all setable parameters of the COLAV system in the config_dict:
+
+        # PSBMPC Parameters
+        psbmpc_params = {
             "n_M" : 1,
             "n_do_ps" : 5,
             "p_step_opt" : 10,
@@ -96,6 +103,30 @@ if __name__ == "__main__":
             "guidance_method" : psbmpcI.GuidanceMethod.LOS
         }
 
+        ownship_params = {
+            "length" : 5.0,
+            "width" : 3.0,
+            "T_U" : 1.44,
+            "T_chi" : 0.92,
+            "R_a" : 5.0,
+            "LOS_LD" : 66.0,
+            "LOS_K_i" : 0.0,
+            "active_waypoint" : 0
+        }
+
+        cpe_params = {
+            "CPE_method" : cpe_method,
+            "n_CE" : 500,
+            "n_MCSKF" : 500,
+            "alpha_n" : 0.9,
+            "gate" : 11.618285980628054,
+            "rho" : 0.9,
+            "max_it" : 6,
+            "q" : 8e-4,
+            "r" : 0.001
+        }
+
+        # IM Parameters
         expanding_dbn = {
             "min_time_s" : 20,
             "max_time_s" : 300,
@@ -206,7 +237,8 @@ if __name__ == "__main__":
             "unmodeled_behaviour" : 0.00001,
             "priority_probability" : priority_probability
         }
-
+        
+        # LOS Parameters
         los_params = {
             "pass_angle_threshold": 60.0,
             "R_a": 8.0,
@@ -215,36 +247,18 @@ if __name__ == "__main__":
             "e_int_max": 30.0
         }
 
-        ownship_params = {
-            "length" : 5.0,
-            "width" : 3.0,
-            "T_U" : 1.44,
-            "T_chi" : 0.92,
-            "R_a" : 5.0,
-            "LOS_LD" : 66.0,
-            "LOS_K_i" : 0.0,
-            "active_waypoint" : 0
-        }
-
-        cpe_params = {
-            "CPE_method" : cpe_method,
-            "n_CE" : 500,
-            "n_MCSKF" : 500,
-            "alpha_n" : 0.9,
-            "gate" : 11.618285980628054,
-            "rho" : 0.9,
-            "max_it" : 6,
-            "q" : 8e-4,
-            "r" : 0.001
+        # Defining the final config_dict which is used by the COLAVBuilder.construct_colav() method
+        psbmpc_wrapper_params = {
+            "psbmpc_params" : psbmpc_params,
+            "psbmpc_ownship_params" : ownship_params,
+            "psbmpc_cpe_params" : cpe_params
         }
 
         config_dict = {
             "name": "PSBMPC",
-            "layer1" : {"psbmpc_params" : psbmpc_params_dict},
-            "layer2" : {"psbmpc_ownship" : ownship_params},
-            "layer3" : {"psbmpc_cpe" : cpe_params},
-            "layer4" : {"im" : im_params},
-            "layer5" : {"los" : los_params}
+            "layer1" : {"psbmpc" : psbmpc_wrapper_params},
+            "layer2" : {"im" : im_params},
+            "layer3" : {"los" : los_params}
         }
 
         # init
@@ -258,7 +272,6 @@ if __name__ == "__main__":
 
     elif test_from_yaml:
         
-        # not completed due to psbmpcI and np in params
         print("\nhead_on_psbmpc.yaml in the scenarios folder can be used "
             "with this test. The file can be chosen in the simulator.yaml file "
             "in the config folder. (In simulator.yaml; set simulator: "

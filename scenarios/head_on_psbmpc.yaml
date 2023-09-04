@@ -20,60 +20,59 @@ ship_list:
     colav:
       name: "PSBMPC" # must be exactly "PSBMPC" to avoid pickle errors in scenario_managment.py
       layer1:
-        psbmpc_params: 
-          n_M: 1
-          n_do_ps: 5
-          p_step_opt: 10
-          p_step_do: 2
-          p_step_grounding: 4
-          T: 120
-          dt: 1.0
-          t_ts: 60
-          d_safe: 4.5
-          d_do_relevant: 500
-          d_so_relevant: 150
-          K_coll: 25
-          T_coll: 100
-          kappa_SO: 20
-          kappa_GW: 25
-          kappa_RA: 15
-          K_u: 6.3
-          K_du: 3.6
-          K_chi: 1.8
-          K_dchi: 1.3
-          K_e: 0.0005
-          G_1: 100.0
-          G_2: 5.0
-          G_3: 1.4
-          G_4: 1.0
-          epsilon_rdp: 2.0
-          u_offsets: [1.0, 0.5, 0.0]
-          chi_offsets: [-60.0, -45.0, -30.0, -15.0, -10.0, -5.0, 0.0, 5.0, 10.0, 15.0, 30.0, 45.0, 60.0]
-          CPE_method: "CE" # CE or MCSKF4D
-          prediction_method: "ERK1" # ERK1 or Linear
-          guidance_method: "LOS" # LOS, WPP or CH
+        psbmpc:
+          psbmpc_params: 
+            n_M: 1
+            n_do_ps: 5
+            p_step_opt: 10
+            p_step_do: 2
+            p_step_grounding: 4
+            T: 120
+            dt: 1.0
+            t_ts: 60
+            d_safe: 4.5
+            d_do_relevant: 500
+            d_so_relevant: 150
+            K_coll: 25
+            T_coll: 100
+            kappa_SO: 20
+            kappa_GW: 25
+            kappa_RA: 15
+            K_u: 6.3
+            K_du: 3.6
+            K_chi: 1.8
+            K_dchi: 1.3
+            K_e: 0.0005
+            G_1: 100.0
+            G_2: 5.0
+            G_3: 1.4
+            G_4: 1.0
+            epsilon_rdp: 2.0
+            u_offsets: [1.0, 0.5, 0.0]
+            chi_offsets: [-60.0, -45.0, -30.0, -15.0, -10.0, -5.0, 0.0, 5.0, 10.0, 15.0, 30.0, 45.0, 60.0]
+            CPE_method: "CE" # CE or MCSKF4D
+            prediction_method: "ERK1" # ERK1 or Linear
+            guidance_method: "LOS" # LOS, WPP or CH
+          psbmpc_ownship_params:
+            length: 5.0
+            width: 3.0
+            T_U: 1.44
+            T_chi: 0.92
+            R_a: 5.0
+            LOS_LD: 66.0
+            LOS_K_i: 0.0
+            active_waypoint: 0
+          psbmpc_cpe_params:
+            CPE_method: "CE" # CE or MCSKF4D
+            n_CE: 500
+            n_MCSKF: 500
+            alpha_n: 0.9
+            gate: 11.618285980628054
+            rho: 0.9
+            max_it: 6
+            q: 0.0008
+            r: 0.001
       layer2:
-        psbmpc_ownship:
-          length: 5.0
-          width: 3.0
-          T_U: 1.44
-          T_chi: 0.92
-          R_a: 5.0
-          LOS_LD: 66.0
-          LOS_K_i: 0.0
-          active_waypoint: 0
-      layer3:
-        psbmpc_cpe:
-          CPE_method: "CE" # CE or MCSKF4D
-          n_CE: 500
-          n_MCSKF: 500
-          alpha_n: 0.9
-          gate: 11.618285980628054
-          rho: 0.9
-          max_it: 6
-          q: 0.0008
-          r: 0.001
-      layer4:
         im:
           number_of_network_evaluation_samples: 100000
           max_number_of_obstacles: 1
@@ -144,13 +143,13 @@ ship_list:
             lower: 0.05
             similar: 0.90
             higher: 0.05
-      layer5:
+      layer3:
         los:
           pass_angle_threshold: 60.0
           R_a: 8.0
           K_p: 0.06
           K_i: 0.002
-          e_int_max: 30.0    
+          e_int_max: 30.0       
     tracker:
       kf:
         P_0: [49.1, 49.1, 0.11, 0.11]

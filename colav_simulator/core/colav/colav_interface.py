@@ -60,9 +60,7 @@ class LayerConfig:
     los: Optional[guidance.LOSGuidanceParams] = None
     sbmpc: Optional[sb_mpc.SBMPCParams] = None
     im: Optional[imI.IMParams.IntentionModelParameters] = None
-    psbmpc_params: Optional[psbmpcI.PSBMPCParams] = None
-    psbmpc_ownship : Optional[psbmpcI.KinematicShip] = None
-    psbmpc_cpe : Optional[psbmpcI.CPE] = None
+    psbmpc: Optional[psbmpcI.PSBMPCParamsWrapper] = None
 
     @classmethod
     def from_dict(cls, config_dict: dict):
@@ -79,14 +77,8 @@ class LayerConfig:
         if "im" in config_dict:
             config.im = cp.convert_settings_dict_to_paramsclass(imI.IMParams.IntentionModelParameters, config_dict["im"])
 
-        if "psbmpc_params" in config_dict:
-            config.psbmpc_params = cp.convert_settings_dict_to_paramsclass(psbmpcI.PSBMPCParams, config_dict["psbmpc_params"])
-
-        if "psbmpc_ownship" in config_dict:
-            config.psbmpc_ownship = cp.convert_settings_dict_to_paramsclass(psbmpcI.KinematicShip, config_dict["psbmpc_ownship"])
-
-        if "psbmpc_cpe" in config_dict:
-            config.psbmpc_cpe = cp.convert_settings_dict_to_paramsclass(psbmpcI.CPE, config_dict["psbmpc_cpe"])
+        if "psbmpc" in config_dict:
+            config.psbmpc = cp.convert_settings_dict_to_paramsclass(psbmpcI.PSBMPCParamsWrapper, config_dict["psbmpc"])
 
         return config
 
@@ -105,14 +97,8 @@ class LayerConfig:
         if self.im is not None:
             config_dict["im"] = self.im.to_dict()
         
-        if self.psbmpc_params is not None:
-            config_dict["psbmpc_params"] = self.psbmpc_params.to_dict()
-
-        if self.psbmpc_ownship is not None:
-            config_dict["psbmpc_ownship"] = self.psbmpc_ownship.to_dict()
-
-        if self.psbmpc_cpe is not None:
-            config_dict["psbmpc_cpe"] = self.psbmpc_cpe.to_dict()
+        if self.psbmpc is not None:
+            config_dict["psbmpc"] = self.psbmpc.to_dict()
 
         return config_dict
 
@@ -125,8 +111,6 @@ class Config:
     layer1: LayerConfig = field(default_factory=lambda: LayerConfig())
     layer2: Optional[LayerConfig] = None
     layer3: Optional[LayerConfig] = None
-    layer4: Optional[LayerConfig] = None
-    layer5: Optional[LayerConfig] = None
 
     @classmethod
     def from_dict(cls, config_dict: dict):
@@ -137,12 +121,6 @@ class Config:
 
         if "layer3" in config_dict:
             config.layer3 = LayerConfig.from_dict(config_dict["layer3"])
-        
-        if "layer4" in config_dict:
-            config.layer4 = LayerConfig.from_dict(config_dict["layer4"])
-
-        if "layer5" in config_dict:
-            config.layer5 = LayerConfig.from_dict(config_dict["layer5"])
 
         return config
 
@@ -154,12 +132,6 @@ class Config:
 
         if self.layer3 is not None:
             config_dict["layer3"] = self.layer3.to_dict()
-
-        if self.layer4 is not None:
-            config_dict["layer4"] = self.layer4.to_dict()
-
-        if self.layer5 is not None:
-            config_dict["layer5"] = self.layer5.to_dict()
 
         return config_dict
 
@@ -479,21 +451,23 @@ class PSBMPCWrapper(ICOLAV):
     """PSBMPC wrapper"""
 
     def __init__(self, config: Config, **kwargs) -> None:
-        assert config.layer2.psbmpc_ownship is not None, "A kinematic ship model of the ownship must be on the second layer for the PSBMPC wrapper."
-        self._psbmpc_ownship = psbmpcI.KinematicShip(config.layer2.psbmpc_ownship)
+        assert config.layer1.psbmpc.psbmpcparams is not None, "PSBMPC parameters must be defined in the PSBMPCParamsWrapper class."
+        self._psbmpc_params = config.layer1.psbmpc.psbmpcparams
 
-        assert config.layer3.psbmpc_cpe is not None, "A Collision Probability Estimator must be on the third layer for the PSBMPC wrapper."
-        self._psbmpc_cpe = psbmpcI.CPE(config.layer3.psbmpc_cpe)
+        assert config.layer1.psbmpc.ownshipparams is not None, "A kinematic ship model of the ownship must be defined in the PSBMPCParamsWrapper class."
+        self._psbmpc_ownship = psbmpcI.KinematicShip(config.layer1.psbmpc.ownshipparams)
 
-        assert config.layer1.psbmpc_params is not None, "PSBMPC must be on the first layer for the PSBMPC wrapper."
-        self._psbmpc_params = config.layer1.psbmpc_params 
+        assert config.layer1.psbmpc.cpeparams is not None, "A Collision Probability Estimator must be defined in the PSBMPCParamsWrapper class."
+        self._psbmpc_cpe = psbmpcI.CPE(config.layer1.psbmpc.cpeparams)
+
+        assert config.layer1.psbmpc is not None, "PSBMPC must be on the first layer for the PSBMPC wrapper."
         self._psbmpc = psbmpcI.PSBMPC(self._psbmpc_ownship, self._psbmpc_cpe, self._psbmpc_params)
 
-        assert config.layer4.im is not None, "IM must be on the fourth layer for the PSBMPC wrapper."
-        self._im_params = imI.IMParams.copy_parameters_to_new_instance(config.layer4.im)
+        assert config.layer2.im is not None, "IM must be on the second layer for the PSBMPC wrapper."
+        self._im_params = imI.IMParams.copy_parameters_to_new_instance(config.layer2.im)
 
-        assert config.layer5.los is not None, "LOS guidance must be on the fifth layer for the PSBMPC wrapper."
-        self._los = guidance.LOSGuidance(config.layer5.los)
+        assert config.layer3.los is not None, "LOS guidance must be on the third layer for the PSBMPC wrapper."
+        self._los = guidance.LOSGuidance(config.layer3.los)
 
         self._obstacle_predictor = psbmpcI.ObstaclePredictor(self._psbmpc_params)
 

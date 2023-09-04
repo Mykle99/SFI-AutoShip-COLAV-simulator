@@ -228,14 +228,6 @@ ship_list:
             required: False
             type: dict
             allow_unknown: True
-          layer4: # Fourth COLAV algorithm, again on a layer above
-            required: False
-            type: dict
-            allow_unknown: True
-          layer5: # Fifth COLAV algorithm, again on a layer above
-            required: False
-            type: dict
-            allow_unknown: True
       tracker:
         required: False
         type: dict

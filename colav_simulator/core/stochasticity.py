@@ -76,7 +76,7 @@ class GaussMarkovDisturbanceParams:
 class Config:
     "Configuration class for managing environment disturbance/stochasticity parameters"
 
-    wind: Optional[GaussMarkovDisturbanceParams] = GaussMarkovDisturbanceParams()
+    wind: Optional[GaussMarkovDisturbanceParams] = field(default_factory = lambda: GaussMarkovDisturbanceParams())
     waves: Optional[dict] = None
     currents: Optional[GaussMarkovDisturbanceParams] = None
 

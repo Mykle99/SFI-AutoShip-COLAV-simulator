@@ -38,7 +38,9 @@ import colav_simulator.core.colav.sbmpc.sbmpc as sb_mpc
 import colav_simulator.core.guidances as guidance
 import colav_simulator.core.stochasticity as stochasticity
 import matplotlib.pyplot as plt
+import geopandas as gpd
 import numpy as np
+import math
 import os
 
 
@@ -480,8 +482,8 @@ class PSBMPCWrapper(ICOLAV):
         self._intention_model_path = os.path.join(_script_dir, _relative_path_to_im)
 
         # Writing IM data to files
-        self._intention_prediction_file = "colav_simulator/output/intention_files/intention_file.csv"
-        self._trajectory_prediction_file = "colav_simulator/output/intention_files/trajectory_file.csv"
+        self._intention_prediction_file = "output/intention_files/intention_file.csv"
+        self._trajectory_prediction_file = "output/intention_files/trajectory_file.csv"
         with open(self._intention_prediction_file, 'w') as intentionFile:
             intentionFile.write("mmsi,x,y,time,colreg_compliant,good_seamanship,unmodeled_behaviour,has_turned_portwards,has_turned_starboardwards,change_in_speed,is_changing_course,CR_PS,CR_SS,HO,OT_en,OT_ing,priority_lower,priority_similar,priority_higher,risk_of_collision,current_risk_of_collision,start\n")
         with open(self._trajectory_prediction_file, 'w') as intentionFile:
@@ -495,13 +497,20 @@ class PSBMPCWrapper(ICOLAV):
         self._course_os_best = 0.0
         self._trajectory_os_best = []
         self._min_depth = 5
+        self._min_distance_to_land =  10
+        self._radius_of_coverage = 500
+        self._angle_of_coverage_behind = 15
         self._obstacles = []
         self._obs_pred_hor_T = self._psbmpc_params.get_par_double(0)
         self._obs_pred_dt = self._psbmpc_params.get_par_double(1)
-        self._relevant_polygons = None
         _n_obs_pred_scen = self._psbmpc_params.get_par_int(1)
+        self._epsilon_rdp = self._psbmpc_params.get_par_double(20)
+        self._epsilon_rdp = 30
         self._obs_pred_scen_Prob = np.ones(_n_obs_pred_scen)
         self._obs_pred_scen_Prob = self._obs_pred_scen_Prob/np.sum(self._obs_pred_scen_Prob)
+        self._grounding_hazards_in_enc = None
+        self._relevant_grounding_hazards = None
+        self._new_static_obstacle_data = True
 
     def plan(
         self,
@@ -521,8 +530,17 @@ class PSBMPCWrapper(ICOLAV):
             self._t_prev = t
             self._initialized = True
 
-            relevant_polygons_shapely = map_functions.extract_relevant_grounding_hazards_as_union(self._min_depth, enc, False)
-            self._relevant_polygons = map_functions.from_MultiPolygon_to_ndarray(relevant_polygons_shapely)
+            self._grounding_hazards_in_enc = map_functions.extract_grounding_hazards_from_entire_enc(
+                self._min_depth, self._min_distance_to_land, enc
+            )
+            ownship_state_cor = [ownship_state[1], ownship_state[0], math.degrees(ownship_state[2])]
+            rel_grounding_hazards = map_functions.extract_grounding_hazards_from_relevant_sector_in_enc(
+                self._grounding_hazards_in_enc, ownship_state_cor, self._radius_of_coverage, self._angle_of_coverage_behind, enc, False
+            )
+            gdf = gpd.GeoSeries(rel_grounding_hazards)
+            simplified_geometries = gdf.simplify(self._epsilon_rdp, preserve_topology = True)
+            self._relevant_grounding_hazards = map_functions.multi_polygon_to_list_of_ndarray(simplified_geometries)
+            self._new_static_obstacle_data = True
 
             for do in do_list:
                 obs_id = do[0]
@@ -665,10 +683,23 @@ class PSBMPCWrapper(ICOLAV):
         self._t_prev = t
         course_ref = references[2, 0]
         speed_ref = references[3, 0]
-        if t - self._t_run_psbmpc_last >= 5.0: #self._relevant_polygons should be changed with []
+        if t - self._t_run_psbmpc_last >= 5.0:
+
+            if t - self._t_run_psbmpc_last >= 15.0:
+                ownship_state_cor = [ownship_state[0], ownship_state[1], math.degrees(ownship_state[2])]
+                rel_grounding_hazards = map_functions.extract_grounding_hazards_from_relevant_sector_in_enc(
+                    self._grounding_hazards_in_enc, ownship_state_cor, self._radius_of_coverage, self._angle_of_coverage_behind, enc, True
+                )
+                gdf = gpd.GeoSeries(rel_grounding_hazards)
+                simplified_geometries = gdf.simplify(self._epsilon_rdp, preserve_topology = True)
+                self._relevant_grounding_hazards = map_functions.multi_polygon_to_list_of_ndarray(simplified_geometries)
+                self._new_static_obstacle_data = True
+
             os_psbmpc_pred = self._psbmpc.calculate_optimal_offsets( 
-                speed_ref, course_ref, waypoints, os_PSBMPC, V_w, wind_direction, [], self._obstacles, False
+                speed_ref, course_ref, waypoints, os_PSBMPC, V_w, wind_direction, self._relevant_grounding_hazards, self._obstacles, False, self._new_static_obstacle_data
             )
+
+            self._new_static_obstacle_data = False
             self._speed_os_best = os_psbmpc_pred.u_opt
             self._course_os_best = os_psbmpc_pred.chi_opt
             self._trajectory_os_best = os_psbmpc_pred.predicted_trajectory

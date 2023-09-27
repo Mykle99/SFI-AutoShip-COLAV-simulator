@@ -6,9 +6,12 @@ need to be built. See docs on the submodules
 from colav_simulator.simulator import Simulator
 from colav_simulator.core.colav.psbmpc import PSBMPCInterface as psbmpcI 
 from colav_simulator.core.colav.im import IMInterface as imI
+from seacharts.enc import ENC
 
+import colav_simulator.common.map_functions as map_functions
 import colav_simulator.core.colav.colav_interface as ci
 import colav_simulator.core.guidances as guidance
+import geopandas as gpd
 import numpy as np
 
 
@@ -17,12 +20,16 @@ if __name__ == "__main__":
 
     # chose which test to perform
     print("\nChose which test to perform by setting the bools:\n"
-        '"test_manual", "test_dict" and "test_from_yaml"\n')
+        '"test_manual", "test_dict", "test_from_yaml" and ' 
+        '"test_map_functions_for_use_with_psbmpc"\n')
     test_manual = False
     test_dict = False
     test_from_yaml = True
+    test_map_functions_for_use_with_psbmpc = False
 
     if test_manual:
+
+        print("Running the manual test.\n")
 
         # init
         colav_config = ci.Config()
@@ -57,6 +64,8 @@ if __name__ == "__main__":
         print("Simulation completed.")
     
     elif test_dict:
+
+        print("Running the dict test.\n")
 
         # setting up the dicts
         # n_bins param in im_params has to match the Bayesian network
@@ -272,7 +281,8 @@ if __name__ == "__main__":
 
     elif test_from_yaml:
         
-        print("\nhead_on_psbmpc.yaml in the scenarios folder can be used "
+        print("Running the yaml test.\n")
+        print("head_on_psbmpc.yaml in the scenarios folder can be used "
             "with this test. The file can be chosen in the simulator.yaml file "
             "in the config folder. (In simulator.yaml; set simulator: "
             'scenario files: ["head_on_psbmpc.yaml])'
@@ -285,3 +295,35 @@ if __name__ == "__main__":
         output = simulator.run()
         print("Simulation completed.")
         
+    elif test_map_functions_for_use_with_psbmpc:
+
+        print("Testing the map functions which are used when running the PSBMPC.")
+
+        # Setup
+        os_state = [39_500.0, 6_957_500.0, 45.0]
+        min_depth = 5
+        min_distance_to_land =  20
+
+        files = ['More_og_Romsdal_utm33.gdb']
+        size = 15_000, 15_000 
+        center = 37_000, 6_950_450.0
+        enc = ENC(size = size, center = center, files = files, new_data = True)
+
+        radius_of_coverage = 3_500
+        angle_of_coverage_behind = 20
+        epsilon_rdp = 30
+
+        # # # This section reflects the code which is used in the PSBMPC algorithm. # # #
+        grounding_hazards_in_enc = map_functions.extract_grounding_hazards_from_entire_enc(
+                min_depth, min_distance_to_land, enc
+        )
+        rel_grounding_hazards = map_functions.extract_grounding_hazards_from_relevant_sector_in_enc(
+            grounding_hazards_in_enc, os_state, radius_of_coverage, angle_of_coverage_behind, enc, True
+        )
+        gdf = gpd.GeoSeries(rel_grounding_hazards)
+        simplified_geometries = gdf.simplify(epsilon_rdp, preserve_topology = True)
+        relevant_grounding_hazards = map_functions.multi_polygon_to_list_of_ndarray(simplified_geometries)
+        new_static_obstacle_data = True
+        # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+        print("Map functions tests completed.")

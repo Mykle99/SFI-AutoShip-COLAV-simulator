@@ -34,11 +34,11 @@ ship_list:
           R_true: [26.3, 26.3, 0.1, 0.1]
     guidance:
       los:
-        pass_angle_threshold: 80.0
-        R_a: 15.0
+        pass_angle_threshold: 90.0
+        R_a: 75.0
         K_p: 0.015
         K_i: 0.0
-        e_int_max: 200.0
+        max_cross_track_error_int: 200.0
     controller:
       flsh:
         K_p_u: 3.0
@@ -74,11 +74,11 @@ ship_list:
           R_true: [26.3, 26.3, 0.1, 0.1]
     guidance:
       los:
-        pass_angle_threshold: 80.0
-        R_a: 15.0
+        pass_angle_threshold: 90.0
+        R_a: 75.0
         K_p: 0.015
         K_i: 0.0
-        e_int_max: 200.0
+        max_cross_track_error_int: 200.0
     controller:
       flsh:
         K_p_u: 3.0

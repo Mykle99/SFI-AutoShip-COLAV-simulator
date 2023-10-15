@@ -132,12 +132,13 @@ dmypy.json
 .pyre/
 
 # Package main
-output/animation/
-output/ais/
-output/figures/
+output/animations/*
+output/ais/*
+output/figures/*
+output/intention_files/*
 
 main.py
 todo.txt
 .vscode/
 /scenarios/saved/
-/data/map/
+/data/ais/

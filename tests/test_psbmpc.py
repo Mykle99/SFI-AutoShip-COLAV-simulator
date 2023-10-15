@@ -4,6 +4,7 @@ need to be built. See docs on the submodules
 """
 
 from colav_simulator.simulator import Simulator
+from colav_simulator.scenario_management import ScenarioGenerator
 from colav_simulator.core.colav.psbmpc import PSBMPCInterface as psbmpcI 
 from colav_simulator.core.colav.im import IMInterface as imI
 from seacharts.enc import ENC
@@ -60,7 +61,13 @@ if __name__ == "__main__":
         colav_config.layer3.los = guidance.LOSGuidanceParams()
 
         # running the simulation
-        output = simulator.run(ownship_colav_system = colav_builder.construct_colav(config = colav_config))
+        scenario_generator = ScenarioGenerator()
+        scenario_data_list = scenario_generator.generate_configured_scenarios()
+        output = simulator.run(
+            scenario_data_list, ownship_colav_system = colav_builder.construct_colav(
+                config = colav_config
+            )
+        )
         print("Simulation completed.")
     
     elif test_dict:
@@ -253,7 +260,7 @@ if __name__ == "__main__":
             "R_a": 8.0,
             "K_p": 0.06,
             "K_i": 0.002,
-            "e_int_max": 30.0
+            "max_cross_track_error_int": 30.0
         }
 
         # Defining the final config_dict which is used by the COLAVBuilder.construct_colav() method
@@ -276,7 +283,13 @@ if __name__ == "__main__":
         simulator = Simulator()
 
         # running the simulation
-        output = simulator.run(ownship_colav_system = colav_builder.construct_colav(config = colav_config))
+        scenario_generator = ScenarioGenerator()
+        scenario_data_list = scenario_generator.generate_configured_scenarios()
+        output = simulator.run(
+            scenario_data_list, ownship_colav_system = colav_builder.construct_colav(
+                config = colav_config
+            )
+        )
         print("Simulation completed.")
 
     elif test_from_yaml:
@@ -292,7 +305,9 @@ if __name__ == "__main__":
         simulator = Simulator()
 
         # running the simulation
-        output = simulator.run()
+        scenario_generator = ScenarioGenerator()
+        scenario_data_list = scenario_generator.generate_configured_scenarios()
+        output = simulator.run(scenario_data_list)
         print("Simulation completed.")
         
     elif test_map_functions_for_use_with_psbmpc:
@@ -313,7 +328,7 @@ if __name__ == "__main__":
         angle_of_coverage_behind = 20
         epsilon_rdp = 30
 
-        # # # This section reflects the code which is used in the PSBMPC algorithm. # # #
+        # # # This section reflects the code which is used in the PSBMPC algorithm  # # #
         grounding_hazards_in_enc = map_functions.extract_grounding_hazards_from_entire_enc(
                 min_depth, min_distance_to_land, enc
         )

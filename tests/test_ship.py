@@ -29,7 +29,7 @@ if __name__ == "__main__":
 
     model = models.RVGunnerus()
     ctrl_params = controllers.FLSHParams(
-        K_p_u=0.4,
+        K_p_u=0.35,
         K_i_u=0.05,
         K_p_psi=0.1,
         K_d_psi=0.6,
@@ -42,7 +42,7 @@ if __name__ == "__main__":
     controller = controllers.FLSH(model.params, ctrl_params)
     sensor_list = [sensorss.Radar()]
     tracker = trackers.KF(sensor_list=sensor_list)
-    guidance_params = guidances.LOSGuidanceParams(K_p=0.01, K_i=0.0, R_a=25.0, e_int_max=200.0, pass_angle_threshold=90.0)
+    guidance_params = guidances.LOSGuidanceParams(K_p=0.01, K_i=0.00015, R_a=25.0, max_cross_track_error_int=200.0, pass_angle_threshold=90.0)
     guidance_method = guidances.LOSGuidance(guidance_params)
 
     ownship = ship.Ship(mmsi=1, identifier=0, model=model, controller=controller, tracker=tracker, sensors=sensor_list, guidance=guidance_method)
@@ -61,7 +61,7 @@ if __name__ == "__main__":
 
     disturbance_config = stochasticity.Config()
     disturbance = stochasticity.Disturbance(disturbance_config)
-    disturbance._currents = None
+    # disturbance._currents = None
     # disturbance._wind = None
     horizon = 1000.0
     dt = 0.1
@@ -216,5 +216,5 @@ if __name__ == "__main__":
         axs["N"].grid()
         axs["N"].legend()
 
-    plt.show(block=False)
+    plt.show()
     print("Done")

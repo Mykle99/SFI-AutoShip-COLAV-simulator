@@ -8,8 +8,9 @@
 """
 
 import math
+import os.path
 from datetime import datetime
-from typing import Tuple
+from typing import Any, Tuple
 from zoneinfo import ZoneInfo
 
 import colav_simulator.common.map_functions as mapf
@@ -18,7 +19,37 @@ import numpy as np
 import pandas as pd
 import shapely.geometry as geometry
 from colav_evaluation_tool.vessel import VesselData, compute_total_dist_travelled
+from scipy.interpolate import interp1d
 from scipy.stats import chi2
+
+
+def create_arc_length_spline(x: list, y: list) -> Tuple[interp1d, interp1d, np.ndarray]:
+    """Creates a spline for the arc length of the input x and y coordinates.
+
+    Args:
+        - x (list): List of x coordinates.
+        - y (list): List of y coordinates.
+
+    Returns:
+        Tuple[interp1d, interp1d, np.ndarray]: Tuple of arc length splines for x and y coordinates.
+    """
+    # Interpolate the data to get more points => higher accuracy in the arc length spline
+    n_points = len(x)
+    y_interp = interp1d(np.arange(n_points), y, kind="linear")
+    x_interp = interp1d(np.arange(n_points), x, kind="linear")
+
+    n_expanded_points = 500
+    y_expanded = list(y_interp(np.linspace(0, n_points - 1, n_expanded_points)))
+    x_expanded = list(x_interp(np.linspace(0, n_points - 1, n_expanded_points)))
+    arc_length = [0.0]
+    for i in range(1, n_expanded_points):
+        pi = np.array([x_expanded[i - 1], y_expanded[i - 1]])
+        pj = np.array([x_expanded[i], y_expanded[i]])
+        arc_length.append(np.linalg.norm(pi - pj))
+    arc_length = np.cumsum(arc_length)
+    y_interp_arc_length = interp1d(arc_length, y_expanded, kind="linear")
+    x_interp_arc_length = interp1d(arc_length, x_expanded, kind="linear")
+    return x_interp_arc_length, y_interp_arc_length, arc_length
 
 
 def linestring_to_ndarray(line: geometry.LineString) -> np.ndarray:
@@ -75,6 +106,24 @@ def check_if_vessel_is_passed_by(
     )
 
     return vessel_is_passed
+
+
+def sample_from_triangle_region(p1: np.ndarray, p2: np.ndarray, p3: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """Samples a point from the triangle region defined by p1, p2 and p3.
+    Ref: Osada et. al. 2002:
+
+    Args:
+        p1 (np.ndarray): Vertex 1 coordinate.
+        p2 (np.ndarray): Vertex 2 coordinate.
+        p3 (np.ndarray): Vertex 3 coordinate.
+
+    Returns:
+        np.ndarray: Sampled point.
+    """
+    r_1 = rng.uniform(0, 1)
+    r_2 = rng.uniform(0, 1)
+    p = (1.0 - np.sqrt(r_1)) * p1 + np.sqrt(r_1) * (1.0 - r_2) * p2 + np.sqrt(r_1) * r_2 * p3
+    return p
 
 
 def compute_vessel_pair_cpa(p1: np.ndarray, v1: np.ndarray, p2: np.ndarray, v2: np.ndarray) -> Tuple[float, float, np.ndarray]:
@@ -306,6 +355,60 @@ def extract_track_data_from_dataframe(ship_df: pd.DataFrame) -> dict:
     return output
 
 
+def inside_bbox(point: np.ndarray, bbox: Tuple[float, float, float, float]) -> bool:
+    """Checks if a point is inside a bounding box.
+
+    Args:
+        point (np.ndarray): Point to check.
+        bbox (Tuple[float, float, float, float]): Bounding box defined by [xmin, ymin, xmax, ymax].
+
+    Returns:
+        bool: True if point is inside bounding box, False otherwise.
+    """
+    return point[0] >= bbox[0] and point[0] <= bbox[2] and point[1] >= bbox[1] and point[1] <= bbox[3]
+
+
+def clip_waypoint_segment_to_bbox(segment: np.ndarray, bbox: Tuple[float, float, float, float]) -> Tuple[np.ndarray, bool]:
+    """Clips a waypoint segment to within a bounding box.
+
+    Args:
+        segment (np.ndarray): Waypoint segment.
+        bbox (Tuple[float, float, float, float]): Bounding box defined by [xmin, ymin, xmax, ymax].
+
+    Returns:
+        Tuple[np.ndarray, bool: Tuple of the new possibly clipped waypoint segment, and a boolean indicating if it was clipped or not.
+    """
+    segment_linestring = ndarray_to_linestring(segment)
+    p1_inside_bbox = inside_bbox(segment[:, 0], bbox)
+    p2_inside_bbox = inside_bbox(segment[:, 1], bbox)
+    if p1_inside_bbox and p2_inside_bbox:
+        return segment, False
+
+    # check intersection with all bounding box line constraints
+    # lower left corner
+    left_vertical = ndarray_to_linestring(np.array([[bbox[0], bbox[2]], [bbox[1], bbox[1]]]))
+    intersection = segment_linestring.intersection(left_vertical)
+    if intersection.geom_type == "Point":
+        p_clip = np.array([intersection.x, intersection.y])
+
+    right_vertical = ndarray_to_linestring(np.array([[bbox[0], bbox[2]], [bbox[3], bbox[3]]]))
+    intersection = segment_linestring.intersection(right_vertical)
+    if intersection.geom_type == "Point":
+        p_clip = np.array([intersection.x, intersection.y])
+
+    top_horizontal = ndarray_to_linestring(np.array([[bbox[2], bbox[2]], [bbox[1], bbox[3]]]))
+    intersection = segment_linestring.intersection(top_horizontal)
+    if intersection.geom_type == "Point":
+        p_clip = np.array([intersection.x, intersection.y])
+
+    bottom_horizontal = ndarray_to_linestring(np.array([[bbox[0], bbox[0]], [bbox[1], bbox[3]]]))
+    intersection = segment_linestring.intersection(bottom_horizontal)
+    if intersection.geom_type == "Point":
+        p_clip = np.array([intersection.x, intersection.y])
+
+    return np.array([segment[:, 0], p_clip]).transpose(), True
+
+
 def check_if_trajectory_is_within_xy_limits(trajectory: np.ndarray, xlimits: list, ylimits: list) -> bool:
     """Checks if the trajectory is within the x and y limits.
 
@@ -432,16 +535,16 @@ def get_relevant_do_states(input_list: list, idx: int) -> list:
         list: List with all (do_idx, do_state) tuples of input_list except the element idx, if idx is in the tuple list
     """
     output_list = []
-    for do_idx, do_state in input_list:
+    for do_idx, do_state, do_length, do_width in input_list:
         if do_idx != idx:
-            output_list.append((do_idx, do_state))
+            output_list.append((do_idx, do_state, do_length, do_width))
 
     return output_list
 
 
-def convert_csog_state_to_vxvy_state(xs: np.ndarray) -> np.ndarray:
-    """Converts from state(s) [x, y, U, chi] x N to [x, y, Vx, Vy] x N,
-    where U is the speed over ground and chi is the course over ground.
+def convert_state_to_vxvy_state(xs: np.ndarray) -> np.ndarray:
+    """Converts from state(s) [x, y, U, chi]^T x N or [x, y, psi, u, v, r]^T x N to [x, y, Vx, Vy]^T x N,
+    where U is the speed over ground and chi is the course over ground, psi heading, u surge, v sway, r yaw rate.
 
     Args:
         xs (np.ndarray): State(s) to convert.
@@ -449,11 +552,19 @@ def convert_csog_state_to_vxvy_state(xs: np.ndarray) -> np.ndarray:
     Returns:
         np.ndarray: Converted state(s).
     """
-
+    dim = xs.shape[0]
     if xs.ndim == 1:
-        return np.array([xs[0], xs[1], xs[2] * np.cos(xs[3]), xs[2] * np.sin(xs[3])])
+        if dim == 4:
+            return np.array([xs[0], xs[1], xs[2] * np.cos(xs[3]), xs[2] * np.sin(xs[3])])
+        else:
+            U = np.sqrt(xs[3] ** 2 + xs[4] ** 2)
+            return np.array([xs[0], xs[1], U * np.cos(xs[2]), U * np.sin(xs[2])])
     else:
-        return np.array([xs[0, :], xs[1, :], np.multiply(xs[2, :], np.cos(xs[3, :])), np.multiply(xs[2, :], np.sin(xs[3, :]))])
+        if dim == 4:
+            return np.array([xs[0, :], xs[1, :], xs[2, :] * np.cos(xs[3, :]), xs[2, :] * np.sin(xs[3, :])])
+        else:
+            U = np.sqrt(np.multiply(xs[3, :], xs[3, :]) + np.multiply(xs[4, :], xs[4, :]))
+            return np.array([xs[0, :], xs[1, :], U * np.cos(xs[2, :]), U * np.sin(xs[2, :])])
 
 
 def convert_vxvy_state_to_sog_cog_state(xs: np.ndarray) -> np.ndarray:
@@ -476,6 +587,29 @@ def convert_vxvy_state_to_sog_cog_state(xs: np.ndarray) -> np.ndarray:
                 np.arctan2(xs[3, :], xs[2, :]),
             ]
         )
+
+
+def convert_3dof_state_to_sog_cog_state(xs: np.ndarray) -> np.ndarray:
+    """Converts from a state [x, y, psi, u, v, r]^T x N to [x, y, U, chi]^T x N.
+
+    Args:
+        xs (np.ndarray): State(s) to convert.
+
+    Returns:
+        np.ndarray: Converted state.
+    """
+    if xs.ndim == 1:
+        heading = xs[2]
+        crab_angle = np.arctan2(xs[4], xs[3])
+        cog = heading + crab_angle
+        speed = np.sqrt(xs[3] ** 2 + xs[4] ** 2)
+        return np.array([xs[0], xs[1], speed, cog])
+    else:
+        heading = xs[2, :]
+        crab_angle = np.arctan2(xs[4, :], xs[3, :])
+        cog = heading + crab_angle
+        speed = np.sqrt(np.multiply(xs[3, :], xs[3, :]) + np.multiply(xs[4, :], xs[4, :]))
+        return np.array([xs[0, :], xs[1, :], speed, cog])
 
 
 def index_of_first_and_last_non_nan(input_list: list | np.ndarray) -> Tuple[int, int]:
@@ -544,7 +678,7 @@ def local_timestamp_from_utc() -> int:
     Returns:
         int: Current local time referenced timestamp
     """
-    return datetime.now().astimezone().timestamp()
+    return int(datetime.now().astimezone().timestamp())
 
 
 def utc_to_local(utc_dt: datetime) -> datetime:
@@ -558,3 +692,45 @@ def utc_to_local(utc_dt: datetime) -> datetime:
         datetime: Local datetime
     """
     return utc_dt.replace(tzinfo=ZoneInfo("localtime"))
+
+
+def write_coast_distances_to_file(dist_port: float, dist_front: float, dist_starboard: float, safety_radius: float, ship_obj: Any, filepath: str) -> None:
+    """
+    Writes the distance to coast data on-line to the AIS case file
+
+    Parameters:
+        dist_port (float): Distance to port coast
+        dist_front (float): Distance to front coast
+        dist_starboard (float): Distance to starboard coast
+        safety_radius (float): Safety radius
+        ship_obj (Ship): Ship object
+        filepath (str): Filepath to AIS case file
+    """
+    new_filepath = filepath + "-radius-" + str(safety_radius)
+
+    if not os.path.isfile(filepath + "-radius-" + str(safety_radius)):
+        old_data = pd.read_csv(filepath, sep=";")
+    else:
+        old_data = pd.read_csv(new_filepath, sep=";")
+
+    columns = ["dcoast_port", "dcoast_front", "dcoast_starboard"]
+
+    if "dcoast_port" not in old_data.columns or "dcoast_front" not in old_data.columns or "dcoast_starboard" not in old_data.columns:
+        old_data[columns[0]] = np.zeros(old_data.index.max() + 1)
+        old_data[columns[1]] = np.zeros(old_data.index.max() + 1)
+        old_data[columns[2]] = np.zeros(old_data.index.max() + 1)
+
+    # Calculates current timestep for a case file with 60 sec intervals
+    current_timestep = int((ship_obj._trajectory_sample - 1) / 60)
+
+    arr1 = old_data["dcoast_port"].tolist()
+    arr1[current_timestep] = dist_port
+    old_data["dcoast_port"] = arr1
+    arr2 = old_data["dcoast_front"].tolist()
+    arr2[current_timestep] = dist_front
+    old_data["dcoast_front"] = arr2
+    arr3 = old_data["dcoast_starboard"].tolist()
+    arr3[current_timestep] = dist_starboard
+    old_data["dcoast_starboard"] = arr3
+
+    old_data.to_csv(new_filepath, sep=";", index=False)

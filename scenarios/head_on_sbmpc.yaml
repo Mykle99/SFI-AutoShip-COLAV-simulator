@@ -1,8 +1,8 @@
 name: "head_on_sbmpc"
 save_scenario: False
 t_start: 0.0
-t_end: 300.0
-dt_sim: 0.1
+t_end: 500.0
+dt_sim: 0.5
 utm_zone: 33
 map_size: [15000.0, 15000.0]
 map_origin_enu: [37000.0, 6950450.0]
@@ -25,7 +25,7 @@ ship_list:
           R_a: 15.0
           K_p: 0.015
           K_i: 0.0
-          e_int_max: 200.0
+          max_cross_track_error_int: 200.0
       layer1:
         sbmpc:
           P_: 1.0
@@ -49,12 +49,12 @@ ship_list:
           Chi_ca_: [-90.0, -75.0, -60.0, -45.0, -30.0, -15.0, 0.0, 15.0, 30.0, 45.0, 60.0, 75.0, 90.0]
           P_ca_: [0.0, 0.5, 1.0]
     # guidance:
-    #   los:
-    #     pass_angle_threshold: 80.0
-    #     R_a: 15.0
-    #     K_p: 0.024
-    #     K_i: 0.0
-    #     e_int_max: 101.0
+    # los:
+    #    pass_angle_threshold: 90.0
+    #    R_a: 75.0
+    #    K_p: 0.015
+    #    K_i: 0.0
+    #    max_cross_track_error_int: 200.0
     tracker:
       kf:
         P_0: [49.1, 49.1, 0.11, 0.11]
@@ -96,7 +96,7 @@ ship_list:
     #       R_a: 15.0
     #       K_p: 0.015
     #       K_i: 0.0
-    #       e_int_max: 200.0
+    #       max_cross_track_error_int: 200.0
     #   layer1:
     #     vo:
     #       length_os: 15.0
@@ -139,7 +139,7 @@ ship_list:
         R_a: 15.0
         K_p: 0.024
         K_i: 0.0
-        e_int_max: 101.0
+        max_cross_track_error_int: 101.0
     controller:
       flsh:
         K_p_u: 3.0

@@ -226,7 +226,7 @@ class CyberShip2Params:
 class Config:
     """Configuration class for managing model parameters."""
 
-    csog: Optional[KinematicCSOGParams] = field(default_factory = lambda: KinematicCSOGParams()) 
+    csog: Optional[KinematicCSOGParams] = field(default_factory=lambda: KinematicCSOGParams())
     telemetron: Optional[TelemetronParams] = None
     cybership2: Optional[CyberShip2Params] = None
     rvgunnerus: Optional[RVGunnerusParams] = None
@@ -429,10 +429,7 @@ class Telemetron(IModel):
 
         eta = xs[0:3]
         eta[2] = mf.wrap_angle_to_pmpi(eta[2])
-
         nu = xs[3:6]
-        nu[0] = mf.sat(nu[0], -1e10, self._params.U_max)
-        nu[2] = mf.sat(nu[2], -self._params.r_max, self._params.r_max)
 
         u[0] = mf.sat(u[0], self._params.Fx_limits[0], self._params.Fx_limits[1])
         u[1] = mf.sat(u[1], self._params.Fy_limits[0], self._params.Fy_limits[1])
@@ -445,9 +442,6 @@ class Telemetron(IModel):
         ode_fun = np.zeros(6)
         ode_fun[0:3] = mf.Rmtrx(eta[2]) @ nu
         ode_fun[3:6] = Minv @ (-Cvv - Dvv + u)
-
-        if abs(nu[0]) < 0.1:
-            ode_fun[2] = 0.0
 
         return ode_fun
 
@@ -475,7 +469,7 @@ class RVGunnerus(IModel):
     """Implements a 3DOF underactuated vessel maneuvering model for the R/V Gunnerus vessel with linear+quadratic viscous loads:
 
     eta_dot = Rpsi(eta) * nu
-    (M_rb + M_a) * nu_dot + C(nu) * nu + (D_l(nu) + D_nl) * nu = tau
+    (M_rb + M_a) * nu_dot + C_rb(nu) * nu + C_a(nu_r) * nu_r + (D_l(nu_r) + D_nl) * nu_r = tau + tau_wind + tau_wave
 
     with eta = [x, y, psi]^T, nu = [u, v, r]^T and xs = [eta, nu]^T.
 
@@ -484,7 +478,9 @@ class RVGunnerus(IModel):
 
     The model is implemented originally by Mathias Marley in the MCSim_python repository, managed by the Marine Cybernetics laboratory https://www.ntnu.edu/imt/lab/cybernetics.
 
-    NOTE: When using Euler`s method, keep the time step small enough (e.g. around 0.1 or less) to ensure numerical stability.
+    Disturbances from winds have been added, with a simple model for wind forces and moments as in Fosse (2011). A future enhancements is to include support for wave disturbances as well.
+
+    NOTE: When using Eulers method, keep the time step small enough (e.g. around 0.1 or less) to ensure numerical stability.
     """
 
     _n_x: int = 6

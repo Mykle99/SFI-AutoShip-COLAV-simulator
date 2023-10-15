@@ -16,13 +16,18 @@ import colav_simulator.common.paths as dp
 import colav_simulator.core.ship as ship
 import matplotlib
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import numpy as np
 from cartopy.feature import ShapelyFeature
+from matplotlib import animation
 from matplotlib_scalebar.scalebar import ScaleBar
 from pandas import DataFrame
 from scipy.stats import chi2, norm
 from seacharts.enc import ENC
 from shapely.geometry import Polygon
+
+plt.rcParams["animation.convert_path"] = "/usr/bin/convert"
+plt.rcParams["animation.ffmpeg_path"] = "/usr/bin/ffmpeg"
 
 
 @dataclass
@@ -31,6 +36,7 @@ class Config:
 
     show_liveplot: bool = True
     zoom_in_liveplot_on_ownship: bool = True
+    zoom_window_width: float = 1000.0
     show_colav_results_live: bool = True
     show_waypoints: bool = False
     show_measurements: bool = False
@@ -38,6 +44,10 @@ class Config:
     show_results: bool = True
     show_target_tracking_results: bool = True
     show_trajectory_tracking_results: bool = True
+    dark_mode_liveplot: bool = True
+    update_rate_liveplot: float = 0.2
+    save_result_figures: bool = False
+    save_liveplot_animation: bool = False
     n_snapshots: int = 3  # number of scenario shape snapshots to show in result plotting
     figsize: list = field(default_factory=lambda: [12, 10])
     margins: list = field(default_factory=lambda: [0.0, 0.0])
@@ -111,32 +121,47 @@ class Config:
 
 
 class Visualizer:
-    """Class with functionality for visualizing/animating ship scenarios, and plotting/saving the simulation results.
+    """Class with functionality for visualizing/animating ship scenarios, and plotting/saving the simulation results."""
 
-    Internal variables:
-        - fig (Figure): Matplotlib figure object for the visualization.
-        - axes (list): List of matplotlib axes objects for the visualization.
-
-    """
-
-    _config: Config
-    fig: plt.figure  # handle to figure for live plotting
-    axes: list  # handle to axes for live plotting
     background: Any  # map background in live plotting fig
-    ship_plt_handles: list  # handles used for live plotting
-    misc_plt_handles: dict  # Extra handles used for live plotting
-    t_start: float = 0.0  # start time of the visualization of one scenario
 
     def __init__(self, config: Optional[Config] = None, enc: Optional[ENC] = None) -> None:
         if config:
-            self._config = config
+            self._config: Config = config
         else:
             self._config = Config()
 
-        if enc:
-            self.init_figure(enc)
+        fig: plt.figure = None  # handle to figure for live plotting
+        axes: list = []  # handle to axes for live plotting
+        ship_plt_handles: list = []  # handles used for live plotting
+        misc_plt_handles: dict = {}  # Extra handles used for live plotting
 
-    def init_figure(self, enc: ENC, extent: Optional[list] = None) -> None:
+        self.xlimits = [-1e10, 1e10]
+        self.ylimits = [-1e10, 1e10]
+
+        if enc:
+            self.xlimits = [enc.bbox[1], enc.bbox[3]]
+            self.ylimits = [enc.bbox[0], enc.bbox[2]]
+            self.init_figure(enc, [self.ylimits[0], self.ylimits[1], self.xlimits[0], self.xlimits[1]])
+
+        self._t_prev_update = 0.0
+        self.t_start = 0.0
+        self.frames = []
+
+    def toggle_liveplot_visibility(self, show: bool) -> None:
+        """Toggles the visibility of the live plot."""
+        self._config.show_liveplot = show
+
+    def toggle_results_visibility(self, show: bool) -> None:
+        """Toggles the visibility of the result plots."""
+        self._config.show_results = show
+
+    def set_update_rate(self, update_rate: float) -> None:
+        """Sets the update rate of the live plot."""
+        assert self._config.show_liveplot, "Live plot must be enabled to set this parameter"
+        self._config.update_rate_liveplot = update_rate
+
+    def init_figure(self, enc: ENC, extent: list) -> None:
         """Initialize the figure for live plotting.
 
         Args:
@@ -144,15 +169,14 @@ class Visualizer:
             - extent (list): List specifying the extent of the map.
         """
         plt.close()
-
+        self.frames = []
         self.fig = plt.figure("Simulation Live Plot", figsize=self._config.figsize)
 
         ax_map = self.fig.add_subplot(projection=enc.crs)
-        mapf.plot_background(ax_map, enc)
+        mapf.plot_background(ax_map, enc, dark_mode=self._config.dark_mode_liveplot)
         ax_map.margins(x=self._config.margins[0], y=self._config.margins[0])
 
-        if extent is not None:
-            ax_map.set_extent(extent, crs=enc.crs)
+        ax_map.set_extent(extent, crs=enc.crs)
         ax_map.gridlines(draw_labels=True, dms=True, color="gray", linewidth=1.5, linestyle="--", alpha=0.3, x_inline=False, y_inline=False)
         plt.ion()
 
@@ -161,27 +185,47 @@ class Visualizer:
 
         ax_map.add_artist(ScaleBar(1, units="m", location="lower left", frameon=False, color="white", box_alpha=0.0, pad=0.5, font_properties={"size": 12}))
         self.axes = [ax_map]
+        self.fig.tight_layout()
         plt.show(block=False)
 
-    def find_plot_limits(self, ownship: ship.Ship, buffer: float = 1000.0) -> Tuple[list, list]:
+    def find_plot_limits(self, enc: ENC, ownship: ship.Ship, buffer: float = 500.0) -> Tuple[list, list]:
         """Finds the limits of the map, based on the own-ship trajectory
 
         Args:
+            - enc (ENC): ENC object containing the map data
             - ownship (ship.Ship): The own-ship object
             - buffer (float): Buffer to add to the limits
 
         Returns:
             Tuple[list, list]: The x and y limits of the map
         """
-        xlimits = [1e10, -1e10]
-        ylimits = [1e10, -1e10]
+        xlimits = [-1e10, 1e10]
+        ylimits = [-1e10, 1e10]
         if ownship.trajectory.size > 0:
             xlimits, ylimits = mhm.update_xy_limits_from_trajectory_data(ownship.trajectory, xlimits, ylimits)
         elif ownship.waypoints.size > 0:
             xlimits, ylimits = mhm.update_xy_limits_from_trajectory_data(ownship.waypoints, xlimits, ylimits)
         xlimits = [xlimits[0] - buffer, xlimits[1] + buffer]
         ylimits = [ylimits[0] - buffer, ylimits[1] + buffer]
+
+        enc_ymin, enc_xmin, enc_ymax, enc_xmax = enc.bbox
+        xlimits = [max(xlimits[0], enc_xmin), min(xlimits[1], enc_xmax)]
+        ylimits = [max(ylimits[0], enc_ymin), min(ylimits[1], enc_ymax)]
         return xlimits, ylimits
+
+    def close_live_plot(self) -> None:
+        """Closes the live plot."""
+        if self._config.show_liveplot:
+            plt.close(fig=self.fig)
+
+    def get_live_plot_image(self) -> np.ndarray:
+        """Returns the live plot image as a numpy array."""
+        if not self._config.show_liveplot:
+            raise ValueError("Live plot is not enabled")
+
+        data = np.frombuffer(self.fig.canvas.tostring_rgb(), dtype=np.uint8)
+        data = data.reshape(self.fig.canvas.get_width_height()[::-1] + (3,))
+        return data
 
     def init_live_plot(self, enc: ENC, ship_list: list) -> None:
         """Initializes the plot handles of the live plot for a simulation
@@ -191,20 +235,19 @@ class Visualizer:
             - enc (ENC): ENC object containing the map data.
             - ship_list (list): List of configured ships in the simulation.
         """
-
         if not self._config.show_liveplot:
             return
 
+        self._t_prev_update = 0.0
         plt.rcParams.update(matplotlib.rcParamsDefault)
         matplotlib.rcParams["pdf.fonttype"] = 42
         matplotlib.rcParams["ps.fonttype"] = 42
 
-        xlimits, ylimits = self.find_plot_limits(ship_list[0])
-
+        self.xlimits, self.ylimits = self.find_plot_limits(enc, ship_list[0])
+        self.init_figure(enc, [self.ylimits[0], self.ylimits[1], self.xlimits[0], self.xlimits[1]])
         if self._config.zoom_in_liveplot_on_ownship:
-            self.init_figure(enc, [ylimits[0], ylimits[1], xlimits[0], xlimits[1]])
-        else:
-            self.init_figure(enc)
+            self.zoom_in_live_plot_on_ownship(enc, ship_list[0].csog_state)
+
         ax_map = self.axes[0]
         self.background = self.fig.canvas.copy_from_bbox(ax_map.bbox)
 
@@ -326,9 +369,9 @@ class Visualizer:
                     [0.0],
                     color=c,
                     linewidth=lw,
-                    marker="",
+                    marker="8",
                     markersize=4,
-                    linestyle="--",
+                    linestyle="dotted",
                     label=ship_name + " nom. traj.",
                     transform=enc.crs,
                     zorder=zorder_patch - 2,
@@ -339,9 +382,9 @@ class Visualizer:
                     [0.0],
                     color=c,
                     linewidth=lw,
-                    marker="8",
+                    marker="",
                     markersize=4,
-                    linestyle="dotted",
+                    linestyle="--",
                     label=ship_name + " pred. traj.",
                     transform=enc.crs,
                     zorder=zorder_patch - 2,
@@ -384,6 +427,8 @@ class Visualizer:
             zorder=10,
         )
 
+        self.frames.append(self.get_live_plot_image())
+
     def update_ownship_live_tracking_data(self, ownship: ship.Ship, sensor_measurements: list, n_ships: int, enc: ENC) -> None:
         """Updates tracking-related plots for the own-ship
 
@@ -402,36 +447,37 @@ class Visualizer:
         zorder_patch = 4
         if self._config.show_liveplot_tracks and len(do_estimates) > 0:
             lw = self._config.do_linewidth
-            for j in range(len(do_estimates)):  # pylint: disable=consider-using-enumerate
+            for j, do_estimate in enumerate(do_estimates):  # pylint: disable=consider-using-enumerate
+                plt_idx = do_labels[j] - 1  # -1 to account for own-ship being idx 0
                 if n_ships > len(self._config.ship_colors):
                     do_c = self._config.do_colors[1]
                 else:
-                    do_c = self._config.do_colors[do_labels[j] - 1]
+                    do_c = self._config.do_colors[plt_idx]
 
-                if self.ship_plt_handles[0]["track_started"][do_labels[j] - 1]:
+                if self.ship_plt_handles[0]["track_started"][plt_idx]:
                     start_idx_track_line_data = 0
                 else:
                     start_idx_track_line_data = 1
-                    self.ship_plt_handles[0]["track_started"][do_labels[j] - 1] = True
+                    self.ship_plt_handles[0]["track_started"][plt_idx] = True
 
-                self.ship_plt_handles[0]["do_tracks"][do_labels[j] - 1].set_xdata(
+                self.ship_plt_handles[0]["do_tracks"][plt_idx].set_xdata(
                     [
-                        *self.ship_plt_handles[0]["do_tracks"][do_labels[j] - 1].get_xdata()[start_idx_track_line_data:],
-                        do_estimates[j][1],
+                        *self.ship_plt_handles[0]["do_tracks"][plt_idx].get_xdata()[start_idx_track_line_data:],
+                        do_estimate[1],
                     ]
                 )
-                self.ship_plt_handles[0]["do_tracks"][do_labels[j] - 1].set_ydata(
+                self.ship_plt_handles[0]["do_tracks"][plt_idx].set_ydata(
                     [
-                        *self.ship_plt_handles[0]["do_tracks"][do_labels[j] - 1].get_ydata()[start_idx_track_line_data:],
-                        do_estimates[j][0],
+                        *self.ship_plt_handles[0]["do_tracks"][plt_idx].get_ydata()[start_idx_track_line_data:],
+                        do_estimate[0],
                     ]
                 )
 
                 ellipse_x, ellipse_y = mhm.create_probability_ellipse(do_covariances[j], 0.99)
                 ell_geometry = Polygon(zip(ellipse_y + do_estimates[j][1], ellipse_x + do_estimates[j][0]))
-                if self.ship_plt_handles[0]["do_covariances"][do_labels[j] - 1] is not None:
-                    self.ship_plt_handles[0]["do_covariances"][do_labels[j] - 1].remove()
-                self.ship_plt_handles[0]["do_covariances"][do_labels[j] - 1] = ax_map.add_feature(
+                if self.ship_plt_handles[0]["do_covariances"][plt_idx] is not None:
+                    self.ship_plt_handles[0]["do_covariances"][plt_idx].remove()
+                self.ship_plt_handles[0]["do_covariances"][plt_idx] = ax_map.add_feature(
                     ShapelyFeature(
                         [ell_geometry],
                         linewidth=lw,
@@ -457,6 +503,10 @@ class Visualizer:
                             for meas in measurements:
                                 xdata.append(meas[1])
                                 ydata.append(meas[0])
+
+                        if not xdata or not ydata:
+                            continue
+
                         if sensor.type == "radar":
                             self.ship_plt_handles[0]["radar"].set_xdata(xdata)
                             self.ship_plt_handles[0]["radar"].set_ydata(ydata)
@@ -486,8 +536,8 @@ class Visualizer:
             self.ship_plt_handles[idx]["patch"].remove()
         self.ship_plt_handles[idx]["patch"] = ax_map.add_feature(ShapelyFeature([ship_poly], color=c, linewidth=lw, crs=enc.crs, zorder=zorder_patch))
 
-        self.ship_plt_handles[idx]["info"].set_x(csog_state[1] - 300)
-        self.ship_plt_handles[idx]["info"].set_y(csog_state[0] + 350)
+        self.ship_plt_handles[idx]["info"].set_x(csog_state[1] - 50)
+        self.ship_plt_handles[idx]["info"].set_y(csog_state[0] + 50)
 
         self.ship_plt_handles[idx]["trajectory"].set_xdata([*self.ship_plt_handles[idx]["trajectory"].get_xdata()[start_idx_ship_line_data:], csog_state[1]])
         self.ship_plt_handles[idx]["trajectory"].set_ydata([*self.ship_plt_handles[idx]["trajectory"].get_ydata()[start_idx_ship_line_data:], csog_state[0]])
@@ -511,8 +561,15 @@ class Visualizer:
         if not self._config.show_liveplot:
             return
 
+        if t - self._t_prev_update < (1.0 / self._config.update_rate_liveplot):
+            return
+
+        self._t_prev_update = t
         self.fig.canvas.restore_region(self.background)
         self.misc_plt_handles["time"].set_text(f"t = {t:.2f} s")
+
+        if self._config.zoom_in_liveplot_on_ownship:
+            self.zoom_in_live_plot_on_ownship(enc, ship_list[0].csog_state)
 
         ax_map = self.axes[0]
         n_ships = len(ship_list)
@@ -541,6 +598,47 @@ class Visualizer:
             plt.legend(loc="upper right")
         self.fig.canvas.blit(ax_map.bbox)
         self.fig.canvas.flush_events()
+        self.frames.append(self.get_live_plot_image())
+
+    def zoom_in_live_plot_on_ownship(self, enc: ENC, os_state: np.ndarray) -> None:
+        """Narrows the live plot extent to the own-ship position.
+
+        Args:
+            - enc (ENC): ENC object containing the map data.
+            os_state (np.ndarray): Own-ship CSOG state.
+        """
+        buffer = self._config.zoom_window_width / 2.0
+        xlimits_os = [os_state[0] - buffer, os_state[0] + buffer]
+        ylimits_os = [os_state[1] - buffer, os_state[1] + buffer]
+        upd_xlimits = [max(xlimits_os[0], self.xlimits[0]), min(xlimits_os[1], self.xlimits[1])]
+        upd_ylimits = [max(ylimits_os[0], self.ylimits[0]), min(ylimits_os[1], self.ylimits[1])]
+        self.axes[0].set_extent([upd_ylimits[0], upd_ylimits[1], upd_xlimits[0], upd_xlimits[1]], crs=enc.crs)
+
+    def save_live_plot_animation(self, filename: Path = dp.animation_output / "liveplot.gif") -> None:
+        """Saves the live plot animation to a file if enabled.
+
+        Args:
+            filename (Path): Path to the file where the animation is saved.
+        """
+        if not self._config.save_liveplot_animation:
+            return
+
+        # Mess with this to change frame size
+        fig = plt.figure(figsize=(self.frames[0].shape[1] / 72.0, self.frames[0].shape[0] / 72.0), dpi=72)
+
+        patch = plt.imshow(self.frames[0], aspect="auto")
+        plt.axis("off")
+
+        def init():
+            patch.set_data(self.frames[0])
+            return (patch,)
+
+        def animate(i):
+            patch.set_data(self.frames[i])
+            return (patch,)
+
+        anim = animation.FuncAnimation(fig=fig, func=animate, init_func=init, blit=True, frames=len(self.frames), interval=50, repeat=True)
+        anim.save(filename=filename.as_posix(), writer=animation.PillowWriter(fps=20), progress_callback=lambda i, n: print(f"Saving frame {i} of {n}"))
 
     def visualize_results(
         self,
@@ -549,10 +647,9 @@ class Visualizer:
         sim_data: DataFrame,
         sim_times: np.ndarray,
         k_snapshots: Optional[list] = None,
-        save_figs: bool = True,
-        save_file_path: Optional[Path] = None,
+        save_file_path: Optional[Path] = dp.figure_output / "scenario_ne",
     ) -> Tuple[list, list]:
-        """Visualize the results of a scenario simulation.
+        """Visualize the results of a scenario simulation, save figures (only map figure as of now) to file if enabled.
 
         Args:
             - enc (ENC): Electronic Navigational Chart object.
@@ -560,7 +657,6 @@ class Visualizer:
             - sim_data (DataFrame): Dataframe of simulation.
             - sim_times (list): List of simulation times.
             - k_snapshots (Optional[list], optional): List of snapshots to visualize.
-            - save_figs (bool, optional): Whether to save the figures.
             - save_file_path (Optional[Path], optional): Path to the file where the figures are saved.
 
         Returns:
@@ -613,7 +709,7 @@ class Visualizer:
         ax_map = fig_map.add_subplot(projection=enc.crs)
         mapf.plot_background(ax_map, enc)
         ax_map.margins(x=self._config.margins[0], y=self._config.margins[0])
-        xlimits, ylimits = self.find_plot_limits(ship_list[0], buffer=0.0)
+        xlimits, ylimits = self.find_plot_limits(enc, ship_list[0], buffer=0.0)
         plt.show(block=False)
 
         figs_tracking: list = []
@@ -682,7 +778,7 @@ class Visualizer:
             if i == 0:
 
                 if self._config.show_trajectory_tracking_results and len(nominal_trajectory_list) > 0:
-                    self.plot_trajectory_tracking_results(i, sim_times, X, nominal_trajectory_list[i], linewidth=1.0)
+                    fig_tt, axes_tt = self.plot_trajectory_tracking_results(i, sim_times, X, nominal_trajectory_list[i], linewidth=1.0)
 
                 track_data = mhm.extract_track_data_from_dataframe(ship_sim_data)
                 do_estimates = track_data["do_estimates"]
@@ -691,7 +787,9 @@ class Visualizer:
                 do_labels = track_data["do_labels"]
 
                 # Plot distance to own-ship
-                self.plot_obstacle_distances_to_ownship(sim_times, trajectory_list, do_estimates, do_covariances, do_labels, min_os_depth, enc)
+                fig_obst_dist, axes_obst_dist = self.plot_obstacle_distances_to_ownship(
+                    sim_times, trajectory_list, do_estimates, do_covariances, do_labels, min_os_depth, enc
+                )
 
                 for j, do_estimates_j in enumerate(do_estimates):
                     first_valid_idx_track, last_valid_idx_track = mhm.index_of_first_and_last_non_nan(do_estimates_j[0, :])
@@ -706,7 +804,7 @@ class Visualizer:
                     do_color = self._config.do_colors[j]
                     do_lw = self._config.do_linewidth
                     do_true_states_j = trajectory_list[do_labels[j]]
-                    do_true_states_j = mhm.convert_csog_state_to_vxvy_state(do_true_states_j)
+                    do_true_states_j = mhm.convert_state_to_vxvy_state(do_true_states_j)
 
                     ax_map.plot(
                         do_estimates_j[1, first_valid_idx_track:end_idx_j],
@@ -730,7 +828,7 @@ class Visualizer:
                     #             linewidth=do_lw,
                     #             color=do_color,
                     #             alpha=0.3,
-                    #             label=f"DO {do_labels[j] - 1} est. cov.",
+                    #             label=f"DO {plt_idx} est. cov.",
                     #             crs=enc.crs,
                     #             zorder=zorder_patch - 2,
                     #         )
@@ -790,7 +888,7 @@ class Visualizer:
         ax_map.add_artist(ScaleBar(1, units="m", location="lower left", frameon=False, color="white", box_alpha=0.0, pad=0.5, font_properties={"size": 12}))
         plt.legend()
 
-        if save_figs:
+        if self._config.save_result_figures:
             if not save_file_path.parents[0].exists():
                 save_file_path.parents[0].mkdir(parents=True)
             fig_map.savefig(save_file_path, format="pdf", dpi=300, bbox_inches="tight")
@@ -840,11 +938,9 @@ class Visualizer:
         os_en_traj[0, :] = os_traj[1, :]
         os_en_traj[1, :] = os_traj[0, :]
         distance_vectors = mapf.compute_distance_vectors_to_grounding(os_en_traj, min_os_depth, enc)
-        dist2closest_grounding_hazard = np.linalg.norm(distance_vectors, axis=0)
+        dist2closest_grounding_hazard = np.linalg.norm(distance_vectors, axis=0)[: sim_times.shape[0]]
         if n_do == 0:
             axes = [axes]
-        # axes[0].plot(sim_times, dist2closest_grounding_hazard, "b", label="Distance to closest grounding hazard")
-        # axes[0].plot(sim_times, d_safe_so * np.ones_like(sim_times), "r--", label="Minimum safety margin")
         axes[0].semilogy(sim_times, dist2closest_grounding_hazard, "b", label="Distance to closest grounding hazard")
         axes[0].semilogy(sim_times, d_safe_so * np.ones_like(sim_times), "r--", label="Minimum safety margin")
         axes[0].set_ylabel("Distance [m]")
@@ -858,7 +954,7 @@ class Visualizer:
                 continue
 
             do_true_states_j = trajectory_list[do_labels[j]]
-            do_true_states_j = mhm.convert_csog_state_to_vxvy_state(do_true_states_j)
+            do_true_states_j = mhm.convert_state_to_vxvy_state(do_true_states_j)
 
             # z_val = norm.ppf(confidence_level)
             # std_x = np.sqrt(do_covariances_j[0, 0, :])
@@ -870,8 +966,8 @@ class Visualizer:
             #     alpha=0.3,
             # )
 
-            est_dist2do_j = np.linalg.norm(do_estimates_j[:2, :] - os_traj[:2, :], axis=0)
-            dist2do_j = np.linalg.norm(do_true_states_j[:2, :] - os_traj[:2, :], axis=0)
+            est_dist2do_j = np.linalg.norm(do_estimates_j[:2, :] - os_traj[:2, :], axis=0)[: sim_times.shape[0]]
+            dist2do_j = np.linalg.norm(do_true_states_j[:2, :] - os_traj[:2, :], axis=0)[: sim_times.shape[0]]
             # axes[j + 1].plot(sim_times, dist2do_j, "b", label=f"Distance to DO{do_labels[j]}")
             # axes[j + 1].plot(sim_times, d_safe_do * np.ones_like(sim_times), "r--", label="Minimum safety margin")
             axes[j + 1].semilogy(sim_times, dist2do_j, "b", label=f"Distance to DO{do_labels[j]}")
@@ -914,12 +1010,18 @@ class Visualizer:
         # axes["x"].set_xlabel("Time [s]")
         axes["x"].set_ylabel("North [m]")
         axes["x"].legend()
+        current_values = axes["x"].get_yticks().tolist()
+        axes["x"].yaxis.set_major_locator(mticker.FixedLocator(current_values))
+        axes["x"].set_yticklabels(["{:.1f}".format(y) for y in current_values])
 
         axes["y"].plot(sim_times[:n_samples], trajectory[1, :n_samples], color="xkcd:blue", linewidth=linewidth, label="actual")
         axes["y"].plot(sim_times[:n_samples], reference_trajectory[1, :n_samples], color="xkcd:red", linestyle="--", linewidth=linewidth, label="nominal")
         # axes["y"].set_xlabel("Time [s]")
         axes["y"].set_ylabel("East [m]")
         axes["y"].legend()
+        current_values = axes["y"].get_yticks().tolist()
+        axes["y"].yaxis.set_major_locator(mticker.FixedLocator(current_values))
+        axes["y"].set_yticklabels(["{:.1f}".format(y) for y in current_values])
 
         axes["psi"].plot(sim_times[:n_samples], trajectory[2, :n_samples] * 180.0 / np.pi, color="xkcd:blue", linewidth=linewidth, label="actual")
         axes["psi"].plot(
@@ -987,8 +1089,8 @@ class Visualizer:
         )
 
         z_val = norm.ppf(confidence_level)
-        axes["x"].plot(sim_times, do_estimates[0, :], color="xkcd:blue", linewidth=do_lw, label="estimate")
-        axes["x"].plot(sim_times, do_true_states[0, :], color="xkcd:red", linewidth=do_lw, label="true")
+        axes["x"].plot(sim_times, do_estimates[0, :].round(decimals=1), color="xkcd:blue", linewidth=do_lw, label="estimate")
+        axes["x"].plot(sim_times, do_true_states[0, :].round(decimals=1), color="xkcd:red", linewidth=do_lw, label="true")
         std_x = np.sqrt(do_covariances[0, 0, :])
         axes["x"].fill_between(
             sim_times,
@@ -1000,9 +1102,12 @@ class Visualizer:
         axes["x"].set_xlabel("Time [s]")
         axes["x"].set_ylabel("North [m]")
         axes["x"].legend()
+        current_values = axes["x"].get_yticks().tolist()
+        axes["x"].yaxis.set_major_locator(mticker.FixedLocator(current_values))
+        axes["x"].set_yticklabels(["{:.1f}".format(x) for x in current_values])
 
-        axes["y"].plot(sim_times, do_estimates[1, :], color="xkcd:blue", linewidth=do_lw, label="estimate")
-        axes["y"].plot(sim_times, do_true_states[1, :], color="xkcd:red", linewidth=do_lw, label="true")
+        axes["y"].plot(sim_times, do_estimates[1, :].round(decimals=1), color="xkcd:blue", linewidth=do_lw, label="estimate")
+        axes["y"].plot(sim_times, do_true_states[1, :].round(decimals=1), color="xkcd:red", linewidth=do_lw, label="true")
         std_y = np.sqrt(do_covariances[1, 1, :])
         axes["y"].fill_between(
             sim_times,
@@ -1014,6 +1119,9 @@ class Visualizer:
         axes["y"].set_xlabel("Time [s]")
         axes["y"].set_ylabel("East [m]")
         axes["y"].legend()
+        current_values = axes["y"].get_yticks().tolist()
+        axes["y"].yaxis.set_major_locator(mticker.FixedLocator(current_values))
+        axes["y"].set_yticklabels(["{:.1f}".format(y) for y in current_values])
 
         axes["Vx"].plot(sim_times, do_estimates[2, :], color="xkcd:blue", linewidth=do_lw, label="estimate")
         axes["Vx"].plot(sim_times, do_true_states[2, :], color="xkcd:red", linewidth=do_lw, label="true")
@@ -1028,6 +1136,9 @@ class Visualizer:
         axes["Vx"].set_xlabel("Time [s]")
         axes["Vx"].set_ylabel("North speed [m/s]")
         axes["Vx"].legend()
+        current_values = axes["Vx"].get_yticks().tolist()
+        axes["Vx"].yaxis.set_major_locator(mticker.FixedLocator(current_values))
+        axes["Vx"].set_yticklabels(["{:.2f}".format(x) for x in current_values])
 
         axes["Vy"].plot(sim_times, do_estimates[3, :], color="xkcd:blue", linewidth=do_lw, label="estimate")
         axes["Vy"].plot(sim_times, do_true_states[3, :], color="xkcd:red", linewidth=do_lw, label="true")
@@ -1042,6 +1153,9 @@ class Visualizer:
         axes["Vy"].set_xlabel("Time [s]")
         axes["Vy"].set_ylabel("East speed [m/s]")
         axes["Vy"].legend()
+        current_values = axes["Vy"].get_yticks().tolist()
+        axes["Vy"].yaxis.set_major_locator(mticker.FixedLocator(current_values))
+        axes["Vy"].set_yticklabels(["{:.2f}".format(x) for x in current_values])
 
         alpha = 0.05
         CI2 = np.array(chi2.ppf(q=[alpha / 2, 1 - alpha / 2], df=2))
@@ -1065,6 +1179,9 @@ class Visualizer:
         axes["NIS"].plot(do_NIS, color="xkcd:blue", linewidth=do_lw, label="NIS")
         axes["NIS"].set_ylabel("NIS")
         axes["NIS"].legend()
+        current_values = axes["NIS"].get_yticks().tolist()
+        axes["NIS"].yaxis.set_major_locator(mticker.FixedLocator(current_values))
+        axes["NIS"].set_yticklabels(["{:.2f}".format(x) for x in current_values])
 
         error = do_true_states - do_estimates
         pos_error = np.sqrt(error[0, :] ** 2 + error[1, :] ** 2)
@@ -1073,6 +1190,10 @@ class Visualizer:
         axes["errs"].plot(sim_times, vel_error, color="xkcd:red", linewidth=do_lw, label="vel. error")
         axes["errs"].set_xlabel("Time [s]")
         axes["errs"].legend()
+        current_values = axes["errs"].get_yticks().tolist()
+        axes["errs"].yaxis.set_major_locator(mticker.FixedLocator(current_values))
+        axes["errs"].set_yticklabels(["{:.4f}".format(x) for x in current_values])
+
         plt.show(block=False)
         return fig, axes
 

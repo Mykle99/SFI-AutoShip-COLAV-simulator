@@ -7,8 +7,46 @@
     Author: Trym Tengesdal
 """
 import math
+from typing import Tuple
 
 import numpy as np
+
+
+def cpa(p_A: np.ndarray, v_A: np.ndarray, p_B: np.ndarray, v_B: np.ndarray) -> Tuple[float, float]:
+    """Computes the closest point of approach (CPA) between two objects A and B.
+
+    Args:
+        p_A (np.ndarray): Position of object A.
+        v_A (np.ndarray): Velocity of object A.
+        p_B (np.ndarray): Position of object B.
+        v_B (np.ndarray): Velocity of object B.
+
+    Returns:
+        Tuple[float, float]: Tuple containing the time and distance to CPA.
+    """
+    p_AB = p_B - p_A
+    v_AB = v_B - v_A
+    v_AB_norm = np.linalg.norm(v_AB)
+    if v_AB_norm < 0.000001:
+        return np.inf, np.inf
+    else:
+        t_cpa = float(-np.dot(p_AB, v_AB) / (v_AB_norm * v_AB_norm))
+        d_cpa = float(np.linalg.norm(p_AB + t_cpa * v_AB))
+        return t_cpa, d_cpa
+
+
+def linear_map(v: float, x: Tuple[float, float], y: Tuple[float, float]) -> float:
+    """Linearly maps v from x to y
+
+    Args:
+        v (float): Value to map
+        x (Tuple[float, float]): Input range
+        y (Tuple[float, float]): Output range
+
+    Returns:
+        float: Mapped value
+    """
+    return y[0] + (v - x[0]) * (y[1] - y[0]) / (x[1] - x[0])
 
 
 def wrap_min_max(x: float | np.ndarray, x_min: float | np.ndarray, x_max: float | np.ndarray) -> float | np.ndarray:

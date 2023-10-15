@@ -638,7 +638,7 @@ class Visualizer:
             return (patch,)
 
         anim = animation.FuncAnimation(fig=fig, func=animate, init_func=init, blit=True, frames=len(self.frames), interval=50, repeat=True)
-        anim.save(filename=filename.as_posix(), writer=animation.PillowWriter(fps=20), progress_callback=lambda i, n: print(f"Saving frame {i} of {n}"))
+        anim.save(filename=filename.as_posix(), writer=animation.PillowWriter(fps=20), progress_callback=lambda i, n: print(f"Saving frame {i + 1} of {n}"))
 
     def visualize_results(
         self,

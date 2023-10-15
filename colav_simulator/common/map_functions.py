@@ -710,7 +710,7 @@ def extract_grounding_hazards_from_relevant_sector_in_enc(
                 i += 1
         for f_p_norm_oship_line in f_p_norm_oship_line_multi_poly:
             enc.draw_circle([f_p_norm_oship_line.x, f_p_norm_oship_line.y], 10, "brown", thickness = 5, fill = True)
-            enc.add_vessels((0, int(ownship_x), int(ownship_y), int(ownship_cog), "black"))
+        enc.add_vessels((0, int(ownship_x), int(ownship_y), int(ownship_cog), "black"))
         enc.show_display()
     
     # Correcting the return type.

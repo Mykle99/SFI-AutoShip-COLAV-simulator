@@ -1455,7 +1455,8 @@ def extract_grounding_hazards_from_relevant_sector_in_enc(
     if show_plots:
         f_p_norm_oship_line_multi_poly = furthest_points_normal_from_haz_poly_reference_line_multi_poly
         enc.start_display()
-        enc.draw_polygon(hazard_polygons_to_keep, color = "red", alpha = 0.6)
+        if hazard_polygons_to_keep != []:
+            enc.draw_polygon(hazard_polygons_to_keep, color = "red", alpha = 0.6)
         for poly_id in range(hazard_poly_id):
             i = 0
             firstBlack = True

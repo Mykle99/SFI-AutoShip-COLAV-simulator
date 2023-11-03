@@ -38,11 +38,12 @@ import colav_simulator.core.colav.kuwata_vo_alg.kuwata_vo as kvo
 import colav_simulator.core.colav.sbmpc.sbmpc as sb_mpc
 import colav_simulator.core.guidances as guidance
 import colav_simulator.core.stochasticity as stochasticity
+import colav_simulator.common.paths as dp
 import matplotlib.pyplot as plt
 import geopandas as gpd
 import numpy as np
+import pathlib
 import math
-import os
 
 
 
@@ -324,11 +325,12 @@ class IMWrapper(ICOLAV):
 
         self.ship_intentions = {}
         self.parameters = imI.IMParams.default_parameters(2)
-        #Priors
-        self.intention_model_path = "colav_simulator/core/colav/cpp_to_py_interfaces/external/ship_intention_inference/files/intention_models/intention_model_from_code.xdsl"
+        
+        # IM Priors
+        self.intention_model_path = str(dp.im / "intention_model_from_code.xdsl")
 
-        #For writing to file
-        self.intention_prediction_file = "output/intention_files/intention_file.csv"
+        # Writing IM data to file
+        self._intention_prediction_file = str(dp.intention_output / "intention_file.csv")
         with open(self.intention_prediction_file, 'w') as intentionFile:
             intentionFile.write("mmsi,x,y,time,colreg_compliant,good_seamanship,unmodeled_behaviour,has_turned_portwards,has_turned_starboardwards,change_in_speed,is_changing_course,CR_PS,CR_SS,HO,OT_en,OT_ing,priority_lower,priority_similar,priority_higher,risk_of_collision,current_risk_of_collision,start\n")
 
@@ -487,15 +489,14 @@ class PSBMPCWrapper(ICOLAV):
 
         # IM currently only works for 2 ships (1 ownship + 1 obstacle ship)
         self._ship_intentions = {}
-        
+    
         # IM Priors
-        _relative_path_to_im = "cpp_to_py_interfaces/external/ship_intention_inference/files/intention_models/intention_model_from_code.xdsl"
-        _script_dir = os.path.dirname(os.path.abspath(__file__))
-        self._intention_model_path = os.path.join(_script_dir, _relative_path_to_im)
+        self._intention_model_path = str(dp.im / "intention_model_from_code.xdsl")
 
         # Writing IM data to files
-        self._intention_prediction_file = "output/intention_files/intention_file.csv"
-        self._trajectory_prediction_file = "output/intention_files/trajectory_file.csv"
+        self._intention_prediction_file = str(dp.intention_output / "intention_file.csv")
+        self._trajectory_prediction_file = str(dp.intention_output / "trajectory_file.csv")
+
         with open(self._intention_prediction_file, 'w') as intentionFile:
             intentionFile.write("mmsi,x,y,time,colreg_compliant,good_seamanship,unmodeled_behaviour,has_turned_portwards,has_turned_starboardwards,change_in_speed,is_changing_course,CR_PS,CR_SS,HO,OT_en,OT_ing,priority_lower,priority_similar,priority_higher,risk_of_collision,current_risk_of_collision,start\n")
         with open(self._trajectory_prediction_file, 'w') as intentionFile:
@@ -510,7 +511,7 @@ class PSBMPCWrapper(ICOLAV):
         self._trajectory_os_best = []
         self._min_depth = 5
         self._min_distance_to_land =  10
-        self._radius_of_coverage = 500
+        self._radius_of_coverage = 450
         self._angle_of_coverage_behind = 15
         self._obstacles = []
         self._obs_pred_hor_T = self._psbmpc_params.get_par_double(0)

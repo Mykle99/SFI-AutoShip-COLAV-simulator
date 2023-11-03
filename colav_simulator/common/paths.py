@@ -14,6 +14,10 @@ package = root / "colav_simulator"
 scenarios = root / "scenarios"
 output = root / "output"
 
+core = package / "core"
+colav = core / "colav"
+im = colav / "cpp_to_py_interfaces/external/ship_intention_inference/files/intention_models"
+
 schemas = package / "schemas"
 simulator_schema = schemas / "simulator.yaml"
 scenario_schema = schemas / "scenario.yaml"
@@ -29,3 +33,4 @@ saved_scenarios = scenarios / "saved"
 
 animation_output = output / "animations"
 figure_output = output / "figures"
+intention_output = output / "intention_files"

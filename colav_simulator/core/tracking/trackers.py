@@ -16,6 +16,11 @@ import colav_simulator.common.config_parsing as cp
 import numpy as np
 import scipy.linalg as la
 
+#Create a simple import for the VIMMJIPDA package until it is correctly implemented as a submodule.
+#TODO: Make decision on how submodule should work and implement it later
+from VIMMJIPDA.code.run import setup_manager
+from VIMMJIPDA.code.tracking.managers import Manager 
+
 
 class ITracker(ABC):
     @abstractmethod
@@ -375,3 +380,120 @@ class CVModel:
             )
             * self._q
         )
+
+
+
+
+
+
+
+class VIMMJIPDA(ITracker):
+    """The VIMMJIPDA class implements the VIMMJIPDA (Visibility Interacting Multiple Models Joint Integrated Probabilistic Data Association) tracker by 
+    Audun Gulliksstad Hem, Edmund Førland Brekke and Lars-Christian Ness Tokle, introduced in the article: 
+    "Multitarget Tracking With Multiple Models and Visibility: Derivation and Verification on Maritime Radar Data"
+    
+    NOTE: It is possible to configure this tracker by turning of the functionality for: Interacting Multiple Models, Visibility and Multi-Target turning
+    the tracker into an IPDA tracker
+    """
+
+    def __init__(self, sensor_list: list) -> None:
+        #TODO Add functionality for input params
+        #TODO Add functionality to input sensors. (Give error message for not using radar???)
+
+        if sensor_list is None:
+            raise ValueError("Sensor list must be provided.")
+
+        self.sensors: list = sensor_list
+
+        self._track_initialized: list = []
+        self._track_terminated: list = []
+        self._labels: list = [] # List of DO IDs
+        self._xs_p: list = [] # List of DO states
+        self._P_p: list = []
+        self._xs_upd: list = []
+        self._P_upd: list = []
+        self._length_upd: list = []  # List of DO length estimates. Assumed known
+        self._width_upd: list = []  # List of DO width estimates. Assumed known
+        self._NIS: list = []
+
+
+        # self._manager = #Create a variable for the VIMMJIPDA manager 
+        self._manager: Manager = setup_manager()
+
+    def track(self, t: float, dt: float, true_do_states: list, ownship_state: np.ndarray) -> Tuple[list, list]:
+        """Tracks/updates estimates on dynamic obstacles, based on sensor measurements
+        generated from the input true dynamic obstacle states.
+
+        Args:
+            dt (float): Time since last update
+            t (float): Current time (assumed >= 0)
+            true_do_states (list): List of tuples of true dynamic obstacle indices and states (do_idx, [x, y, Vx, Vy], length, width) x n_do. Used for simulating sensor measurements.
+            ownship_state (np.ndarray): Ownship state vector [x, y, Vx, Vy] used for simulating sensor measurements.
+
+        Returns:
+            Tuple[list, list]: List of updated dynamic obstacle tracks (ID, state, cov, length, width). Also, a list the sensor measurements used.
+        """
+        # Update tracker variables based on true states
+        max_sensor_range = max([sensor.max_range for sensor in self.sensors]) #Find largest range among the sensors
+        for do_idx, do_state, do_length, do_width in true_do_states: # Loop through every DO, and get their ID, state, lenght and width
+            dist_ownship_to_do = np.linalg.norm(do_state[:2] - ownship_state[:2]) #Calculate the distance between ownship and DO
+            if do_idx not in self._labels and dist_ownship_to_do < max_sensor_range: #Check if DO is not already detected and is closer than max sensor range
+                # New track. TODO: Implement track initiation, e.g. n out of m based initiation.
+                self._labels.append(do_idx) #Add DO-ID to tracker Labels
+                self._track_initialized.append(False) #? Why are these false still?
+                self._track_terminated.append(False) #? Why is this false still?
+                self._xs_upd.append(do_state) #Add state to tracker update step?
+                # self._P_upd.append(self._params.P_0) # Probably remove this as this is somewhere inside the VIMMJIPDA
+                self._xs_p.append(do_state) #Add state to tracker prediction step???
+                # self._P_p.append(self._params.P_0) #Add covariance from prediction step
+                self._length_upd.append(do_length) #Include the length of object into tracker
+                self._width_upd.append(do_width) #Include the width of object into tracker
+                self._NIS.append(np.nan) #Don't include NIS yet
+            elif do_idx in self._labels:
+                self._track_initialized[self._labels.index(do_idx)] = True #Set the target as initialized
+
+        n_tracked_do = len(self._xs_upd)
+
+
+        # Only generate measurements for initialized tracks
+        # TODO: Figure out why it only generates measurements for initialized tracks and change this. Since Initialization is a part of the VIMMJIPDA
+        sensor_measurements = []
+        for sensor in self.sensors:
+            z = sensor.generate_measurements(t, true_do_states, ownship_state)
+            sensor_measurements.append(z)
+
+        #Apply changes to measurements here so that they will fit into the VIMMJIPDA
+        # TODO: see if I need to adjust the measurements
+        # TODO: Check if I need to adjust the ownship state
+
+        tracks = []
+        # Insert VIMMJIPDA step here
+        self._manager.step(sensor_measurements, t, ownship_state)
+        #TODO: Finish extracting the tracks from the manager and into the tracks variable
+        for track in self._manager.tracks:
+            if track.index not in self._track_initialized:
+                print("Placeholder")
+        
+
+        #Return tracks and sensor_measurements
+        return tracks, sensor_measurements
+
+        
+
+
+    def get_track_information(self) -> Tuple[list, list]:
+        #TODO sjekk denne på nytt når track er implementert ferdig
+        
+        tracks = []
+        for i, label in enumerate(self._labels):
+            tracks.append(
+                (
+                    label,
+                    self._xs_upd[i],
+                    self._P_upd[i],
+                    self._length_upd[i],
+                    self._width_upd[i],
+                )
+            )
+        return tracks, self._NIS
+    

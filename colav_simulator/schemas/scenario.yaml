@@ -261,10 +261,10 @@ ship_list:
           god_tracker:
             type: string
             empty: True
-            excludes: [kf]
+            excludes: [kf, VIMMJIPDA]
           kf:
             type: dict
-            excludes: [god_tracker]
+            excludes: [god_tracker, VIMMJIPDA]
             schema:
               P_0:
                 required: True
@@ -279,6 +279,10 @@ ship_list:
                 type: float
                 min: 0.00001
                 max: 1.0
+          VIMMJIPDA:
+            type: string
+            empty: True
+            excludes: [kf,god_tracker]
       sensors:
         required: False
         type: list

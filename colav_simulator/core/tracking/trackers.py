@@ -18,8 +18,8 @@ import scipy.linalg as la
 
 #Create a simple import for the VIMMJIPDA package until it is correctly implemented as a submodule.
 #TODO: Make decision on how submodule should work and implement it later
-from VIMMJIPDA.code.run import setup_manager
-from VIMMJIPDA.code.tracking.managers import Manager 
+from colav_simulator.core.tracking.VIMMJIPDA.code.run import setup_manager
+from colav_simulator.core.tracking.VIMMJIPDA.code.tracking.managers import Manager 
 
 
 class ITracker(ABC):
@@ -57,9 +57,11 @@ class KFParams:
 @dataclass
 class Config:
     """Class for holding tracker configuration parameters."""
+    #TODO: Add possibility to config VIMMJIPDA
 
     god_tracker: Optional[bool] = False
     kf: Optional[KFParams] = field(default_factory=lambda: KFParams())
+    VIMMJIPDA: Optional[bool] = False
 
     def to_dict(self) -> dict:
         output_dict = {}
@@ -67,7 +69,8 @@ class Config:
             output_dict["kf"] = self.kf.to_dict()
         if self.god_tracker is not None:
             output_dict["god_tracker"] = ""
-
+        if self.VIMMJIPDA is not None:
+            output_dict["VIMMJIPDA"] = ""
         return output_dict
 
     @classmethod
@@ -79,6 +82,11 @@ class Config:
         elif "god_tracker" in config_dict:
             config.god_tracker = True
             config.kf = None
+            config.VIMMJIPDA = None
+        elif "VIMMJIPDA" in config_dict:
+            config.god_tracker = False
+            config.kf = None
+            config.VIMMJIPDA = True
 
         return config
 
@@ -99,6 +107,8 @@ class TrackerBuilder:
             return KF(sensors, config.kf)
         elif config and config.god_tracker:
             return GodTracker(sensors)
+        elif config and config.VIMMJIPDA:
+            return VIMMJIPDA(sensors)
         else:
             return KF(sensors)
 

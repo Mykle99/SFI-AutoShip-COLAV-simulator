@@ -1,8 +1,8 @@
-from tracking import constructs, utilities, filters, models, initiators, terminators, managers, associators, trackers
-from parameters import tracker_params, measurement_params, process_params
+from colav_simulator.core.tracking.VIMMJIPDA.code.tracking import constructs, utilities, filters, models, initiators, terminators, managers, associators, trackers
+from colav_simulator.core.tracking.VIMMJIPDA.code.parameters import tracker_params, measurement_params, process_params
 
-import import_data
-import plotting
+import colav_simulator.core.tracking.VIMMJIPDA.code.import_data
+import colav_simulator.core.tracking.VIMMJIPDA.code.plotting
 import numpy as np
 
 

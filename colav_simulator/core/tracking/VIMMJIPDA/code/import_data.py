@@ -1,7 +1,7 @@
 import scipy.io as io
 import numpy as np
-from tracking import constructs
-from parameters import measurement_params
+from colav_simulator.core.tracking.VIMMJIPDA.code.tracking import constructs
+from colav_simulator.core.tracking.VIMMJIPDA.code.parameters import measurement_params
 
 
 def NE_to_xy(state_list):

@@ -19,7 +19,9 @@ import scipy.linalg as la
 #Create a simple import for the VIMMJIPDA package until it is correctly implemented as a submodule.
 #TODO: Make decision on how submodule should work and implement it later
 from colav_simulator.core.tracking.VIMMJIPDA.code.run import setup_manager
-from colav_simulator.core.tracking.VIMMJIPDA.code.tracking.managers import Manager 
+from colav_simulator.core.tracking.VIMMJIPDA.code.tracking.managers import Manager
+from colav_simulator.core.tracking.VIMMJIPDA.code.tracking.constructs import State, Measurement
+from colav_simulator.core.tracking.VIMMJIPDA.code.parameters import measurement_params
 
 
 class ITracker(ABC):
@@ -257,7 +259,6 @@ class KF(ITracker):
         for sensor in self.sensors:
             z = sensor.generate_measurements(t, true_do_states, ownship_state)
             sensor_measurements.append(z)
-
         tracks = []
         for i in range(n_tracked_do):
             if self._track_initialized[i] and not self._track_terminated[i]:
@@ -412,6 +413,7 @@ class VIMMJIPDA(ITracker):
 
         if sensor_list is None:
             raise ValueError("Sensor list must be provided.")
+        
 
         self.sensors: list = sensor_list
 
@@ -427,8 +429,13 @@ class VIMMJIPDA(ITracker):
         self._NIS: list = []
 
 
+        # TODO: Set these params with config
+        self._IMM_off = True
+        self._single_target = True
+        self._visibility_off = True
+
         # self._manager = #Create a variable for the VIMMJIPDA manager 
-        self._manager: Manager = setup_manager()
+        self._manager: Manager = setup_manager(self._IMM_off, self._single_target, self._visibility_off)
 
     def track(self, t: float, dt: float, true_do_states: list, ownship_state: np.ndarray) -> Tuple[list, list]:
         """Tracks/updates estimates on dynamic obstacles, based on sensor measurements
@@ -450,7 +457,7 @@ class VIMMJIPDA(ITracker):
             if do_idx not in self._labels and dist_ownship_to_do < max_sensor_range: #Check if DO is not already detected and is closer than max sensor range
                 # New track. TODO: Implement track initiation, e.g. n out of m based initiation.
                 self._labels.append(do_idx) #Add DO-ID to tracker Labels
-                self._track_initialized.append(False) #? Why are these false still?
+                self._track_initialized.append(False) #? Why are these false still?ownship
                 self._track_terminated.append(False) #? Why is this false still?
                 self._xs_upd.append(do_state) #Add state to tracker update step?
                 # self._P_upd.append(self._params.P_0) # Probably remove this as this is somewhere inside the VIMMJIPDA
@@ -471,19 +478,62 @@ class VIMMJIPDA(ITracker):
         for sensor in self.sensors:
             z = sensor.generate_measurements(t, true_do_states, ownship_state)
             sensor_measurements.append(z)
-
+        # print(sensor_measurements)
         #Apply changes to measurements here so that they will fit into the VIMMJIPDA
-        # TODO: see if I need to adjust the measurements
+        # TODO: see if I need to adjust the measurements. The measurements should come in tuples [Meas: [x,y], Meas: [x,y], Meas: [x,y], etc.]. Or maybe without the meas.
         # TODO: Check if I need to adjust the ownship state
+        
+        """ The ownship position needs to be a construct.State object. 
+        This comes on the form Construct.State(Mean, Covariance, timestamp, ID)
+        Here, mean is the position on the form: (E, V_E, N, V_N, 0). Where E = East, N = North, V = Velocity
+        Covariance = np.Identity(4)
+        Timestamp = t
+        Id can be skipped
+        
+        """
+        ownship_mean = np.asarray([ownship_state[1], ownship_state[3], ownship_state[0], ownship_state[2], 0])
+        # print(ownship_mean)
+        ownship_cov = np.identity(4)
 
+        ownship_pos = State(ownship_mean, ownship_cov, t)
+
+
+        """
+        The measurement set needs to be a set containing construct.Measurement object
+        This comes on the form Construct.Measurement(measurement, measurement_params['cart_cov'],  float(timestamp))
+        Measurement is the position in xy-coordinates on the form (E,N)
+        measurement_params['cart_cov'] is given in parameters
+        timestamp is given
+        """
+        
+        #TODO: Look into, might need if measurements
+        sensor_measurement = set() #Look at import_data.py to see how to transform data
+        # print(type(sensor_measurement))
+        
+        for sensor in sensor_measurements:
+            for meas in sensor:
+                # print(meas, type(meas))
+                if not np.isnan(meas[0]) and not np.isnan(meas[1]):
+                    values = np.asarray([meas[1],meas[0]])
+                    sensor_measurement.add(Measurement(values, measurement_params['cart_cov'],  t))
+                    print(sensor_measurement, 'meas')
+                    print(ownship_mean, 'os')
+                    self._manager.step(sensor_measurement, float(t), ownship=ownship_pos)
+                    # print('step run')
+
+                    # sensor_measurement.add(Measurement([meas[1], meas[0]], measurement_params['cart_cov'],  t))
+        #             print('hello world')
+        # print(sensor_measurement)
+        # for el in sensor_measurement:
+        #     print(el)
         tracks = []
         # Insert VIMMJIPDA step here
-        self._manager.step(sensor_measurements, t, ownship_state)
+        # TODO: Is there any reason to run the tracker if there is no measurement? Probably because of the visibility?
+        # self._manager.step(sensor_measurement, float(t), ownship=ownship_pos)
         #TODO: Finish extracting the tracks from the manager and into the tracks variable
-        for track in self._manager.tracks:
-            if track.index not in self._track_initialized:
-                print("Placeholder")
-        
+        # for track in self._manager.tracks:
+            # print(track)
+            
 
         #Return tracks and sensor_measurements
         return tracks, sensor_measurements
@@ -495,15 +545,15 @@ class VIMMJIPDA(ITracker):
         #TODO sjekk denne på nytt når track er implementert ferdig
         
         tracks = []
-        for i, label in enumerate(self._labels):
-            tracks.append(
-                (
-                    label,
-                    self._xs_upd[i],
-                    self._P_upd[i],
-                    self._length_upd[i],
-                    self._width_upd[i],
-                )
-            )
+        # for i, label in enumerate(self._labels):
+        #     tracks.append(
+        #         (
+        #             label,
+        #             self._xs_upd[i],
+        #             self._P_upd[i],
+        #             self._length_upd[i],
+        #             self._width_upd[i],
+        #         )
+        #     )
         return tracks, self._NIS
     

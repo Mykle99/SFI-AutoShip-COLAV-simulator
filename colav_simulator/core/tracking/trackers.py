@@ -20,8 +20,9 @@ import scipy.linalg as la
 #TODO: Make decision on how submodule should work and implement it later
 from colav_simulator.core.tracking.VIMMJIPDA.code.run import setup_manager
 from colav_simulator.core.tracking.VIMMJIPDA.code.tracking.managers import Manager
-from colav_simulator.core.tracking.VIMMJIPDA.code.tracking.constructs import State, Measurement
+from colav_simulator.core.tracking.VIMMJIPDA.code.tracking.constructs import State, Measurement, TrackState, Track
 from colav_simulator.core.tracking.VIMMJIPDA.code.parameters import measurement_params
+
 
 
 class ITracker(ABC):
@@ -273,7 +274,6 @@ class KF(ITracker):
 
                         if not np.isnan(NIS_i):
                             self._NIS[i] = NIS_i
-
             tracks.append(
                 (
                     self._labels[i],
@@ -399,10 +399,10 @@ class CVModel:
 
 
 class VIMMJIPDA(ITracker):
-    """The VIMMJIPDA class implements the VIMMJIPDA (Visibility Interacting Multiple Models Joint Integrated Probabilistic Data Association) tracker by 
-    Audun Gulliksstad Hem, Edmund Førland Brekke and Lars-Christian Ness Tokle, introduced in the article: 
+    """The VIMMJIPDA class implements the VIMMJIPDA (Visibility Interacting Multiple Models Joint Integrated Probabilistic Data Association) tracker by
+    Audun Gulliksstad Hem, Edmund Førland Brekke and Lars-Christian Ness Tokle, introduced in the article:
     "Multitarget Tracking With Multiple Models and Visibility: Derivation and Verification on Maritime Radar Data"
-    
+
     NOTE: It is possible to configure this tracker by turning of the functionality for: Interacting Multiple Models, Visibility and Multi-Target turning
     the tracker into an IPDA tracker
     """
@@ -413,17 +413,15 @@ class VIMMJIPDA(ITracker):
 
         if sensor_list is None:
             raise ValueError("Sensor list must be provided.")
-        
+
 
         self.sensors: list = sensor_list
 
         self._track_initialized: list = []
         self._track_terminated: list = []
-        self._labels: list = [] # List of DO IDs
-        self._xs_p: list = [] # List of DO states
-        self._P_p: list = []
-        self._xs_upd: list = []
-        self._P_upd: list = []
+        self._labels: list = [] # List of DO IDs and labels
+        self._means: list = []
+        self._covs: list = []
         self._length_upd: list = []  # List of DO length estimates. Assumed known
         self._width_upd: list = []  # List of DO width estimates. Assumed known
         self._NIS: list = []
@@ -434,7 +432,7 @@ class VIMMJIPDA(ITracker):
         self._single_target = True
         self._visibility_off = True
 
-        # self._manager = #Create a variable for the VIMMJIPDA manager 
+        # self._manager = #Create a variable for the VIMMJIPDA manager
         self._manager: Manager = setup_manager(self._IMM_off, self._single_target, self._visibility_off)
 
     def track(self, t: float, dt: float, true_do_states: list, ownship_state: np.ndarray) -> Tuple[list, list]:
@@ -459,17 +457,14 @@ class VIMMJIPDA(ITracker):
                 self._labels.append(do_idx) #Add DO-ID to tracker Labels
                 self._track_initialized.append(False) #? Why are these false still?ownship
                 self._track_terminated.append(False) #? Why is this false still?
-                self._xs_upd.append(do_state) #Add state to tracker update step?
-                # self._P_upd.append(self._params.P_0) # Probably remove this as this is somewhere inside the VIMMJIPDA
-                self._xs_p.append(do_state) #Add state to tracker prediction step???
-                # self._P_p.append(self._params.P_0) #Add covariance from prediction step
+                self._means.append(np.array([0,0,0,0]))
+                self._covs.append(np.eye(5))
                 self._length_upd.append(do_length) #Include the length of object into tracker
                 self._width_upd.append(do_width) #Include the width of object into tracker
                 self._NIS.append(np.nan) #Don't include NIS yet
             elif do_idx in self._labels:
                 self._track_initialized[self._labels.index(do_idx)] = True #Set the target as initialized
 
-        n_tracked_do = len(self._xs_upd)
 
 
         # Only generate measurements for initialized tracks
@@ -482,14 +477,14 @@ class VIMMJIPDA(ITracker):
         #Apply changes to measurements here so that they will fit into the VIMMJIPDA
         # TODO: see if I need to adjust the measurements. The measurements should come in tuples [Meas: [x,y], Meas: [x,y], Meas: [x,y], etc.]. Or maybe without the meas.
         # TODO: Check if I need to adjust the ownship state
-        
-        """ The ownship position needs to be a construct.State object. 
+        # The measurements already have added noise
+        """ The ownship position needs to be a construct.State object.
         This comes on the form Construct.State(Mean, Covariance, timestamp, ID)
         Here, mean is the position on the form: (E, V_E, N, V_N, 0). Where E = East, N = North, V = Velocity
         Covariance = np.Identity(4)
         Timestamp = t
         Id can be skipped
-        
+
         """
         ownship_mean = np.asarray([ownship_state[1], ownship_state[3], ownship_state[0], ownship_state[2], 0])
         # print(ownship_mean)
@@ -505,19 +500,21 @@ class VIMMJIPDA(ITracker):
         measurement_params['cart_cov'] is given in parameters
         timestamp is given
         """
-        
+
         #TODO: Look into, might need if measurements
         sensor_measurement = set() #Look at import_data.py to see how to transform data
         # print(type(sensor_measurement))
-        
+
         for sensor in sensor_measurements:
             for meas in sensor:
                 # print(meas, type(meas))
+                # for do_idx, do_state, do_length, do_width in true_do_states:
+                #     print(do_state[0], do_state[1])
                 if not np.isnan(meas[0]) and not np.isnan(meas[1]):
                     values = np.asarray([meas[1],meas[0]])
                     sensor_measurement.add(Measurement(values, measurement_params['cart_cov'],  t))
-                    print(sensor_measurement, 'meas')
-                    print(ownship_mean, 'os')
+                    # print(sensor_measurement, 'meas')
+                    # print(ownship_mean, 'os')
                     self._manager.step(sensor_measurement, float(t), ownship=ownship_pos)
                     # print('step run')
 
@@ -526,34 +523,75 @@ class VIMMJIPDA(ITracker):
         # print(sensor_measurement)
         # for el in sensor_measurement:
         #     print(el)
+
+
+
+
         tracks = []
-        # Insert VIMMJIPDA step here
+        # for track in self._manager.tracks:
+        #     print(track)
+
         # TODO: Is there any reason to run the tracker if there is no measurement? Probably because of the visibility?
+        # Currently it tracks nothing if it runs every step
         # self._manager.step(sensor_measurement, float(t), ownship=ownship_pos)
         #TODO: Finish extracting the tracks from the manager and into the tracks variable
-        # for track in self._manager.tracks:
-            # print(track)
+        for track in self._manager.tracks:
+            # print(type(track))
+            mean_xy, cov_xy = track.states.get_mean_covariance_array()
+            # print(track.states.__len__())
+            # print(track.states.leaves.get_mean_covariance_array())
+            #print('\n mean: \n', mean_xy, type(mean_xy))
+            #print('\n cov: \n', cov_xy, type(cov_xy))
+            # print(cov_xy)
+            mean_NE = np.array([mean_xy[0][2], mean_xy[0][0], mean_xy[0][3], mean_xy[0][1]])
+            # TODO: Transform cov matrix to NE coordinates 
+            # TODO: Create func to transform from XY to NE
+            cov_NE = np.array([
+                        [cov_xy[0][2][2], cov_xy[0][0][2], cov_xy[0][2][3] , cov_xy[0][2][1]],
+                        [cov_xy[0][0][2], cov_xy[0][0][0], cov_xy[0][0][3], cov_xy[0][0][1]],
+                        [cov_xy[0][2][3], cov_xy[0][0][3], cov_xy[0][3][3], cov_xy[0][3][1]],
+                        [cov_xy[0][1][2], cov_xy[0][0][1], cov_xy[0][3][1], cov_xy[0][1][1]]
+                ])
+            self._means[0] = mean_NE
+            self._covs[0] = cov_NE
+            # print(mean_NE, type(mean_NE), 'mean \n')
+
+
+            # print('cov xy',cov_xy, type(cov_xy), '\n')
+            # print('cov NE',cov_NE, type(cov_NE), '\n')
+        # print(true_do_states, 'true states')
+        # print(self._labels, 'labels')
+        #TODO: Move this into loop for more tracks than 1
             
+            tracks.append(
+                (
+                    self._labels[0],
+                    self._means[0],
+                    self._covs[0],
+                    self._length_upd[0],
+                    self._width_upd[0]
+                )
+            )
+
 
         #Return tracks and sensor_measurements
         return tracks, sensor_measurements
 
-        
+
 
 
     def get_track_information(self) -> Tuple[list, list]:
         #TODO sjekk denne på nytt når track er implementert ferdig
-        
+
         tracks = []
-        # for i, label in enumerate(self._labels):
-        #     tracks.append(
-        #         (
-        #             label,
-        #             self._xs_upd[i],
-        #             self._P_upd[i],
-        #             self._length_upd[i],
-        #             self._width_upd[i],
-        #         )
-        #     )
+        for track in self._manager.tracks:
+            tracks.append(
+                (
+                    self._labels[0],
+                    self._means[0],
+                    self._covs[0],
+                    self._length_upd[0],
+                    self._width_upd[0]
+                )
+            )
         return tracks, self._NIS
-    

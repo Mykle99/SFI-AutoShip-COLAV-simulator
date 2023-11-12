@@ -498,7 +498,10 @@ def extract_relevant_grounding_hazards_as_union(vessel_min_depth: int, enc: ENC,
     relevant_hazards = [enc.land.geometry.union(enc.shore.geometry).union(dangerous_seabed)]
     filtered_relevant_hazards = []
     for hazard in relevant_hazards:
-        poly = MultiPolygon(Polygon(p.exterior) for p in hazard.geoms if isinstance(p, Polygon))
+        if isinstance(hazard, Polygon):
+            poly = MultiPolygon([hazard])
+        else:
+            poly = MultiPolygon(Polygon(p.exterior) for p in hazard.geoms if isinstance(p, Polygon))
         if buffer is not None:
             poly = poly.buffer(buffer)
         filtered_relevant_hazards.append(poly)
@@ -1039,12 +1042,15 @@ def extract_grounding_hazards_from_entire_enc(
         dangerous_seabed.union(land_seabed_0_intersection).union(land).union(
         land_shore_intersection).union(shore)#.union(seabed_vessel_min_depth)
     ]
-    
+
     filtered_relevant_hazards = []
     for hazard in relevant_hazards:
-        filtered_relevant_hazards.append(
-            MultiPolygon(Polygon(p.exterior) for p in hazard.geoms if isinstance(p, Polygon))
-        )
+        if isinstance(hazard, Polygon):
+            filtered_relevant_hazards.append(MultiPolygon([hazard]))
+        else:
+            filtered_relevant_hazards.append(
+                MultiPolygon(Polygon(p.exterior) for p in hazard.geoms if isinstance(p, Polygon))
+            )
         
     return filtered_relevant_hazards
 
@@ -1677,6 +1683,8 @@ def min_distance_to_hazards(hazards: list, x: float, y: float) -> float:
         float: Minimum distance to hazards in meters.
     """
     min_dist = 1e12
+    if isinstance(hazards, Polygon):
+        hazards = [hazards]
     for hazard in hazards:
         if hazard.is_empty:
             continue
@@ -1685,6 +1693,34 @@ def min_distance_to_hazards(hazards: list, x: float, y: float) -> float:
         if dist < min_dist:
             min_dist = dist
     return min_dist
+
+
+def min_distance_and_point_to_hazards(hazards: list, x: float, y: float) -> [float, Point]:
+    """Compute the minimum distance to hazards from a given point.
+
+    Args:
+        hazards (list): List of Multipolygon/Polygon objects that are relevant
+        x (float): Ship's easting coordinate
+        y (float): Ship's northing coordinate
+
+    Returns:
+        float: Minimum distance to hazards in meters.
+        Point: The point on the hazards which is the closest to Point(x, y).
+    """
+    min_dist = 1e12
+    if isinstance(hazards, Polygon):
+        hazards = [hazards]
+    closest_point_on_hazard = None
+    ship_point = Point(x, y)
+    for hazard in hazards:
+        if hazard.is_empty:
+            continue
+
+        dist = ship_point.distance(hazard)
+        if dist < min_dist:
+            min_dist = dist
+            closest_point_on_hazard = ops.nearest_points(ship_point, hazard)[1]
+    return [min_dist, closest_point_on_hazard]
 
 
 def check_if_segment_crosses_grounding_hazards(enc: ENC, p2: np.ndarray, p1: np.ndarray, draft: float = 5.0) -> bool:
@@ -2105,4 +2141,30 @@ def multi_polygon_to_list_of_ndarray(filtered_relevant_hazards: list[MultiPolygo
             for point in polygon.exterior.coords:
                 temp_polygon_np = np.append(temp_polygon_np, [point[0], point[1]])
             polygon_list.append(temp_polygon_np)
+    return polygon_list
+
+
+def multi_polygon_to_list_of_ndarray_flip_x_y(filtered_relevant_hazards: list[MultiPolygon]) -> list[np.ndarray]:
+    """Converts a list of MultiPolygons to a list of numpy ndarrays. The function also flips the x and y coordinates.
+
+    Args:
+        - filtered_relevant_hazards list[MultiPolygon]: The data which is to be converted from "shapely" to "numpy".
+
+    Returns:
+        list[np.ndarray]: The converted data. Now compatible with the C++ binding of the PSBMPC.
+    """
+    polygon_list = []
+    if isinstance(filtered_relevant_hazards[0], Polygon):
+        for polygon in filtered_relevant_hazards:
+            temp_polygon_np = np.array([])
+            for point in polygon.exterior.coords:
+                temp_polygon_np = np.append(temp_polygon_np, [point[1], point[0]])
+            polygon_list.append(temp_polygon_np)
+    else:
+        for multi_polygon in filtered_relevant_hazards:
+            for polygon in multi_polygon.geoms:
+                temp_polygon_np = np.array([])
+                for point in polygon.exterior.coords:
+                    temp_polygon_np = np.append(temp_polygon_np, [point[1], point[0]])
+                polygon_list.append(temp_polygon_np)
     return polygon_list

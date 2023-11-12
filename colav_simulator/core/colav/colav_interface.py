@@ -42,7 +42,6 @@ import colav_simulator.common.paths as dp
 import matplotlib.pyplot as plt
 import geopandas as gpd
 import numpy as np
-import pathlib
 import math
 
 
@@ -506,6 +505,7 @@ class PSBMPCWrapper(ICOLAV):
         self._initialized = False
         self._t_run_im_last = 0.0
         self._t_run_psbmpc_last = 0.0
+        self._t_upd_static_obstacle_last = 0.0
         self._speed_os_best = 1.0
         self._course_os_best = 0.0
         self._trajectory_os_best = []
@@ -552,7 +552,7 @@ class PSBMPCWrapper(ICOLAV):
             )
             gdf = gpd.GeoSeries(rel_grounding_hazards)
             simplified_geometries = gdf.simplify(self._epsilon_rdp, preserve_topology = True)
-            self._relevant_grounding_hazards = map_functions.multi_polygon_to_list_of_ndarray(simplified_geometries)
+            self._relevant_grounding_hazards = map_functions.multi_polygon_to_list_of_ndarray_flip_x_y(simplified_geometries)
             self._new_static_obstacle_data = True
 
             for do in do_list:
@@ -696,20 +696,21 @@ class PSBMPCWrapper(ICOLAV):
         self._t_prev = t
         course_ref = references[2, 0]
         speed_ref = references[3, 0]
-        if t - self._t_run_psbmpc_last >= 5.0:
+        if t - self._t_run_psbmpc_last >= 1.5:
 
-            if t - self._t_run_psbmpc_last >= 15.0:
-                ownship_state_cor = [ownship_state[0], ownship_state[1], math.degrees(ownship_state[2])]
+            if t - self._t_upd_static_obstacle_last >= 3.0:
+                ownship_state_cor = [ownship_state[1], ownship_state[0], math.degrees(ownship_state[2])]
                 rel_grounding_hazards = map_functions.extract_grounding_hazards_from_relevant_sector_in_enc(
-                    self._grounding_hazards_in_enc, ownship_state_cor, self._radius_of_coverage, self._angle_of_coverage_behind, enc, True
+                    self._grounding_hazards_in_enc, ownship_state_cor, self._radius_of_coverage, self._angle_of_coverage_behind, enc, False
                 )
                 gdf = gpd.GeoSeries(rel_grounding_hazards)
                 simplified_geometries = gdf.simplify(self._epsilon_rdp, preserve_topology = True)
-                self._relevant_grounding_hazards = map_functions.multi_polygon_to_list_of_ndarray(simplified_geometries)
+                self._relevant_grounding_hazards = map_functions.multi_polygon_to_list_of_ndarray_flip_x_y(simplified_geometries)
                 self._new_static_obstacle_data = True
+                self._t_upd_static_obstacle_last = t
 
             os_psbmpc_pred = self._psbmpc.calculate_optimal_offsets( 
-                speed_ref, course_ref, waypoints, os_PSBMPC, V_w, wind_direction, self._relevant_grounding_hazards, self._obstacles, False, self._new_static_obstacle_data
+                speed_ref, course_ref, waypoints, os_PSBMPC, V_w, wind_direction, self._relevant_grounding_hazards, self._obstacles, self._new_static_obstacle_data, False
             )
 
             self._new_static_obstacle_data = False

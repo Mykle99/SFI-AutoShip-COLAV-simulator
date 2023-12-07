@@ -55,7 +55,23 @@ class KFParams:
     @classmethod
     def from_dict(cls, config_dict):
         return KFParams(P_0=np.diag(config_dict["P_0"]), q=config_dict["q"])
+    
 
+@dataclass
+class VIMMJIPDAParams:
+    """Class for holding VIMMJIPDA parameters."""
+    IMM_off : bool = field(default_factory=lambda: False)
+    single_target : bool = field(default_factory=lambda: False)
+    visibility_off : bool = field(default_factory=lambda: False)
+
+    def to_dict(self):
+        output_dict = {"IMM_off": self.IMM_off, "single_target": self.single_target, "visibility_off": self.visibility_off}
+        return output_dict
+    
+    @classmethod
+    def from_dict(cls, config_dict):
+        return VIMMJIPDAParams(IMM_off=config_dict["IMM_off"], single_target=config_dict["single_target"], visibility_off=config_dict["visibility_off"])
+        
 
 @dataclass
 class Config:
@@ -64,7 +80,7 @@ class Config:
 
     god_tracker: Optional[bool] = False
     kf: Optional[KFParams] = field(default_factory=lambda: KFParams())
-    VIMMJIPDA: Optional[bool] = False
+    VIMMJIPDA: Optional[VIMMJIPDAParams] = field(default_factory=lambda: VIMMJIPDAParams())
 
     def to_dict(self) -> dict:
         output_dict = {}
@@ -73,7 +89,7 @@ class Config:
         if self.god_tracker is not None:
             output_dict["god_tracker"] = ""
         if self.VIMMJIPDA is not None:
-            output_dict["VIMMJIPDA"] = ""
+            output_dict["VIMMJIPDA"] = self.VIMMJIPDA.to_dict()
         return output_dict
 
     @classmethod
@@ -89,7 +105,7 @@ class Config:
         elif "VIMMJIPDA" in config_dict:
             config.god_tracker = False
             config.kf = None
-            config.VIMMJIPDA = True
+            config.VIMMJIPDA = cp.convert_settings_dict_to_dataclass(VIMMJIPDAParams, config_dict["VIMMJIPDA"])
 
         return config
 
@@ -111,7 +127,7 @@ class TrackerBuilder:
         elif config and config.god_tracker:
             return GodTracker(sensors)
         elif config and config.VIMMJIPDA:
-            return VIMMJIPDA(sensors)
+            return VIMMJIPDA(sensors, config.VIMMJIPDA)
         else:
             return KF(sensors)
 
@@ -407,12 +423,18 @@ class VIMMJIPDA(ITracker):
     the tracker into an IPDA tracker
     """
 
-    def __init__(self, sensor_list: list) -> None:
+    def __init__(self, sensor_list: list, params: Optional[VIMMJIPDAParams] = None) -> None:
         #TODO Add functionality for input params
         #TODO Add functionality to input sensors. (Give error message for not using radar???)
 
         if sensor_list is None:
             raise ValueError("Sensor list must be provided.")
+
+
+        if params is not None:
+            self._params: VIMMJIPDAParams = params
+        else:
+            self._params = VIMMJIPDAParams()
 
 
         self.sensors: list = sensor_list
@@ -428,12 +450,9 @@ class VIMMJIPDA(ITracker):
 
 
         # TODO: Set these params with config
-        self._IMM_off = True
-        self._single_target = True
-        self._visibility_off = True
 
         # self._manager = #Create a variable for the VIMMJIPDA manager
-        self._manager: Manager = setup_manager(self._IMM_off, self._single_target, self._visibility_off)
+        self._manager: Manager = setup_manager(self._params.IMM_off, self._params.single_target, self._params.visibility_off)
 
     def track(self, t: float, dt: float, true_do_states: list, ownship_state: np.ndarray) -> Tuple[list, list]:
         """Tracks/updates estimates on dynamic obstacles, based on sensor measurements
@@ -465,7 +484,7 @@ class VIMMJIPDA(ITracker):
             elif do_idx in self._labels:
                 self._track_initialized[self._labels.index(do_idx)] = True #Set the target as initialized
 
-
+        print(self._params)
 
         # Only generate measurements for initialized tracks
         # TODO: Figure out why it only generates measurements for initialized tracks and change this. Since Initialization is a part of the VIMMJIPDA
@@ -488,7 +507,7 @@ class VIMMJIPDA(ITracker):
         """
         ownship_mean = np.asarray([ownship_state[1], ownship_state[3], ownship_state[0], ownship_state[2], 0])
         # print(ownship_mean)
-        ownship_cov = np.identity(4)
+        ownship_cov = np.identity(5)
 
         ownship_pos = State(ownship_mean, ownship_cov, t)
 
@@ -536,6 +555,12 @@ class VIMMJIPDA(ITracker):
         # self._manager.step(sensor_measurement, float(t), ownship=ownship_pos)
         #TODO: Finish extracting the tracks from the manager and into the tracks variable
         for track in self._manager.tracks:
+            if track.index > len(self._means):
+                self._means.append(np.array([0,0,0,0]))
+            if track.index > len(self._covs):
+                self._covs.append(np.eye(4))
+
+
             # print(type(track))
             mean_xy, cov_xy = track.states.get_mean_covariance_array()
             # print(track.states.__len__())
@@ -552,11 +577,12 @@ class VIMMJIPDA(ITracker):
                         [cov_xy[0][2][3], cov_xy[0][0][3], cov_xy[0][3][3], cov_xy[0][3][1]],
                         [cov_xy[0][1][2], cov_xy[0][0][1], cov_xy[0][3][1], cov_xy[0][1][1]]
                 ])
-            self._means[0] = mean_NE
-            self._covs[0] = cov_NE
+            # print(track.index)
+            self._means[track.index- 1] = mean_NE
+            self._covs[track.index -1] = cov_NE
             # print(mean_NE, type(mean_NE), 'mean \n')
 
-
+            
             # print('cov xy',cov_xy, type(cov_xy), '\n')
             # print('cov NE',cov_NE, type(cov_NE), '\n')
         # print(true_do_states, 'true states')
@@ -565,13 +591,14 @@ class VIMMJIPDA(ITracker):
             
             tracks.append(
                 (
-                    self._labels[0],
-                    self._means[0],
-                    self._covs[0],
-                    self._length_upd[0],
-                    self._width_upd[0]
+                    track.index,
+                    self._means[track.index - 1],
+                    self._covs[track.index - 1],
+                    self._length_upd[track.index - 1],
+                    self._width_upd[track.index - 1]
                 )
             )
+            
 
 
         #Return tracks and sensor_measurements

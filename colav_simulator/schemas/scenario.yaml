@@ -280,9 +280,18 @@ ship_list:
                 min: 0.00001
                 max: 1.0
           VIMMJIPDA:
-            type: string
-            empty: True
+            type: dict
             excludes: [kf,god_tracker]
+            schema:
+              IMM_off:
+                required: True
+                type: boolean
+              single_target:
+                required: True
+                type: boolean
+              visibility_off:
+                required: True
+                type: boolean
       sensors:
         required: False
         type: list

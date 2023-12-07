@@ -19,9 +19,11 @@ dpi_value = 150  # figure dpi value
 if __name__ == "__main__":
 
     scenario_file = dp.scenarios / "VIMMJIPDA.yaml"
+    # scenario_file = dp.scenarios / "VIMMJIPDA_Multi_Target.yaml"
     scenario_generator = ScenarioGenerator()
     scenario_data = scenario_generator.generate(config_file=scenario_file)
     simulator = Simulator()
     simulator.toggle_liveplot_visibility(True)
     output = simulator.run([scenario_data])
+    # simulator.visualizer.save_live_plot_animation()
     print("done")

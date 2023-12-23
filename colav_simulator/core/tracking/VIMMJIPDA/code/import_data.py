@@ -34,7 +34,7 @@ def ensure_correct_state_dimension(state_list):
 
 
 def final_dem(t_min=0, t_max=10000):
-    mat = io.loadmat('/home/ragnarnw/Github/MultiTargetTracker/data/final_demo.mat') #Using absolute path
+    mat = io.loadmat('/home/ragnarnw/Github/colav_simulator/colav_simulator/core/tracking/VIMMJIPDA/data/final_demo.mat') #Using absolute path
     for key, value in mat.items():
         if key == 'measurements':
             measurements = np.asarray(value)[0]
@@ -43,14 +43,25 @@ def final_dem(t_min=0, t_max=10000):
                 for j, measurement in enumerate(measurement_set):
                     if np.any(np.isinf(measurement)):
                         delete_indices.append(j)
+                #print('\n\n before del \n')
+                #print(measurement_set)
                 measurement_set = np.delete(measurement_set, delete_indices, axis=-2)
+                #print('\n\n after del \n')
+                #print(measurement_set)
                 measurements[i] = NE_to_xy(measurement_set)
+                #print('\n\n in array: \n')
+                #print(measurements[i])
         if key == 'timestamps':
             timestamps = np.asarray(value)[0]
         if key == 'TELEMETRON':
             ownship = np.asarray(value)
+            # print(ownship[0])
             ownship = ensure_correct_state_dimension(ownship)
+            #print(ownship)
             ownship = NE_to_xy(ownship)
+            # print(ownship[0])
+            #for ownship_pos in ownship:
+            #    print(ownship_pos)
         if key == 'GUNNERUS':
             gunnerus_ais = np.asarray(value)
             gunnerus_ais = ensure_correct_state_dimension(gunnerus_ais)
@@ -58,10 +69,14 @@ def final_dem(t_min=0, t_max=10000):
     timestamps = timestamps-timestamps[0]
     valid_indexes = np.where((t_min <= timestamps.squeeze()) & (timestamps.squeeze() <= t_max))
     timestamps = timestamps[valid_indexes]
+    print(len(timestamps))
     measurements_all = np.array([set() for i in valid_indexes[0]])
+    print(measurements_all)
 
     for i, (measurement_set, timestamp) in enumerate(zip(measurements[valid_indexes], timestamps)):
+        print(measurement_set)
         for measurement in measurement_set:
+            #print(measurement)
             measurements_all[i].add(constructs.Measurement(measurement, measurement_params['cart_cov'],  float(timestamp)))
 
     gunnerus_ais = {1: [constructs.State(measurement, np.identity(4), timestamp) for measurement, timestamp in zip(gunnerus_ais[valid_indexes], timestamps)]}
@@ -69,7 +84,7 @@ def final_dem(t_min=0, t_max=10000):
     return measurements_all, ownship, gunnerus_ais,timestamps
 
 def joyride(t_min=0, t_max=10000):
-    data = io.loadmat('/data/joyride.mat')
+    data = io.loadmat('/home/ragnarnw/Github/colav_simulator/colav_simulator/core/tracking/VIMMJIPDA/data/joyride.mat')
 
     for key, value in data.items():
         if key == 'measurements':

@@ -50,7 +50,7 @@ class ScenarioPlot(object):
         self.ax.set_xlabel('East [m]')
         self.ax.set_ylabel('North [m]')
 
-        self.fig.savefig(f'/home/ragnarnw/Github/MultiTargetTracker/results/output.pdf',dpi=600, format='pdf')  #Absolute filepath used
+        self.fig.savefig(f'/home/ragnarnw/Github/colav_simulator/colav_simulator/core/tracking/VIMMJIPDA/results/output.pdf',dpi=600, format='pdf')  #Absolute filepath used
 
 
 

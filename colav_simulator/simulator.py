@@ -172,15 +172,15 @@ class Simulator:
                 if self._config.verbose:
                     print(f"\rSimulator: Finished running through scenario episode nr {ep + 1}: {scenario_episode_file}.")
 
-                self.visualizer.visualize_results(
-                    scenario_enc,
-                    ship_list,
-                    sim_data,
-                    sim_times,
-                    save_file_path=dp.figure_output / episode_config.name,
-                )
+                # self.visualizer.visualize_results(
+                #     scenario_enc,
+                #     ship_list,
+                #     sim_data,
+                #     sim_times,
+                #     save_file_path=dp.figure_output / episode_config.name,
+                # )
 
-                self.visualizer.save_live_plot_animation(dp.animation_output / (episode_config.name + ".gif"))
+                # self.visualizer.save_live_plot_animation(dp.animation_output / (episode_config.name + ".gif"))
 
                 vessel_data = mhm.convert_simulation_data_to_vessel_data(sim_data, ship_info, episode_config.utm_zone)
 

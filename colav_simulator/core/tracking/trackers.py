@@ -424,7 +424,6 @@ class VIMMJIPDA(ITracker):
     """
 
     def __init__(self, sensor_list: list, params: Optional[VIMMJIPDAParams] = None) -> None:
-        #TODO Add functionality for input params
         #TODO Add functionality to input sensors. (Give error message for not using radar???)
 
         if sensor_list is None:
@@ -449,9 +448,6 @@ class VIMMJIPDA(ITracker):
         self._NIS: list = []
 
 
-        # TODO: Set these params with config
-
-        # self._manager = #Create a variable for the VIMMJIPDA manager
         self._manager: Manager = setup_manager(self._params.IMM_off, self._params.single_target, self._params.visibility_off)
 
     def track(self, t: float, dt: float, true_do_states: list, ownship_state: np.ndarray) -> Tuple[list, list]:
@@ -484,14 +480,23 @@ class VIMMJIPDA(ITracker):
             elif do_idx in self._labels:
                 self._track_initialized[self._labels.index(do_idx)] = True #Set the target as initialized
 
-        print(self._params)
+        # print(self._params)
 
-        # Only generate measurements for initialized tracks
-        # TODO: Figure out why it only generates measurements for initialized tracks and change this. Since Initialization is a part of the VIMMJIPDA
+        
         sensor_measurements = []
         for sensor in self.sensors:
             z = sensor.generate_measurements(t, true_do_states, ownship_state)
             sensor_measurements.append(z)
+            meas_covariance_NE = sensor._params.R
+        meas_covariance_NE[0][0] = 10
+        
+        # TODO: Set this value via 
+        meas_covariance_XY = np.asarray([[meas_covariance_NE[1][1], 0], [0, meas_covariance_NE[0][0]]])
+        # print(meas_covariance_XY)
+            
+        # TODO: Specify whether the Tracker and the measurements should use the same Cov or not. (Edmund mentioned this) 
+        # TODO: Add functionality for several sensors
+
         # print(sensor_measurements)
         #Apply changes to measurements here so that they will fit into the VIMMJIPDA
         # TODO: see if I need to adjust the measurements. The measurements should come in tuples [Meas: [x,y], Meas: [x,y], Meas: [x,y], etc.]. Or maybe without the meas.
@@ -524,6 +529,7 @@ class VIMMJIPDA(ITracker):
         sensor_measurement = set() #Look at import_data.py to see how to transform data
         # print(type(sensor_measurement))
 
+        new_meas = False
         for sensor in sensor_measurements:
             for meas in sensor:
                 # print(meas, type(meas))
@@ -531,17 +537,13 @@ class VIMMJIPDA(ITracker):
                 #     print(do_state[0], do_state[1])
                 if not np.isnan(meas[0]) and not np.isnan(meas[1]):
                     values = np.asarray([meas[1],meas[0]])
-                    sensor_measurement.add(Measurement(values, measurement_params['cart_cov'],  t))
-                    # print(sensor_measurement, 'meas')
-                    # print(ownship_mean, 'os')
-                    self._manager.step(sensor_measurement, float(t), ownship=ownship_pos)
-                    # print('step run')
-
-                    # sensor_measurement.add(Measurement([meas[1], meas[0]], measurement_params['cart_cov'],  t))
-        #             print('hello world')
-        # print(sensor_measurement)
-        # for el in sensor_measurement:
-        #     print(el)
+                    # TODO: Add Functionality to choose if Filter knows the measurement Cov or not
+                    # sensor_measurement.add(Measurement(values, measurement_params['cart_cov'],  t)) # Choose this if Tracker should not know meas cov
+                    sensor_measurement.add(Measurement(values, meas_covariance_XY,  t)) # Choose this if Tracker should know meas cov
+                    new_meas = True
+        
+        if new_meas:
+            self._manager.step(sensor_measurement, float(t), ownship=ownship_pos)
 
 
 
@@ -550,9 +552,7 @@ class VIMMJIPDA(ITracker):
         # for track in self._manager.tracks:
         #     print(track)
 
-        # TODO: Is there any reason to run the tracker if there is no measurement? Probably because of the visibility?
-        # Currently it tracks nothing if it runs every step
-        # self._manager.step(sensor_measurement, float(t), ownship=ownship_pos)
+        
         #TODO: Finish extracting the tracks from the manager and into the tracks variable
         for track in self._manager.tracks:
             if track.index > len(self._means):

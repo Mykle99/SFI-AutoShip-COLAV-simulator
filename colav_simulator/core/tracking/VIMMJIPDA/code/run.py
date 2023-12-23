@@ -1,12 +1,12 @@
 from colav_simulator.core.tracking.VIMMJIPDA.code.tracking import constructs, utilities, filters, models, initiators, terminators, managers, associators, trackers
 from colav_simulator.core.tracking.VIMMJIPDA.code.parameters import tracker_params, measurement_params, process_params
 
-import colav_simulator.core.tracking.VIMMJIPDA.code.import_data
-import colav_simulator.core.tracking.VIMMJIPDA.code.plotting
+from  colav_simulator.core.tracking.VIMMJIPDA.code import import_data
+from  colav_simulator.core.tracking.VIMMJIPDA.code import plotting
 import numpy as np
 
 
-def setup_manager():
+def setup_manager(IMM_off, single_target, visibility_off):
     if IMM_off:
         kinematic_models = [models.CVModel(process_params['cov_CV_high'])]
         pi_matrix = np.array([[1]])
@@ -93,14 +93,20 @@ if __name__ == '__main__':
         measurements, ownship, ground_truth, timestamps = import_data.final_dem(t_min=t_min, t_max=t_max) #ground_truth here refers to the Gunnerus AIS data
 
     # define tracker evironment
-    manager = setup_manager()
+    manager = setup_manager(IMM_off, single_target, visibility_off)
 
 
     # run tracker
     for k, (measurement_set, timestamp, ownship_pos) in enumerate(zip(measurements, timestamps, *ownship.values())):
-        print(f'Timestep {k}:')
+        # print(f'Timestep {k}:')
+        # print(measurement_set, type(measurement_set))
+        # print(measurements, type(measurements))
+        # print(ownship_pos)
+        # print(timestamp)
+        #for meas in measurement_set:
+        #    print(meas, type(meas))
         manager.step(measurement_set, float(timestamp), ownship=ownship_pos)
-        print(f'Active tracks: {np.sort([track.index for track in manager.tracks])}\n')
+        # print(f'Active tracks: {np.sort([track.index for track in manager.tracks])}\n')
 
 
 

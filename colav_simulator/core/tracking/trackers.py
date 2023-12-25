@@ -488,7 +488,7 @@ class VIMMJIPDA(ITracker):
             z = sensor.generate_measurements(t, true_do_states, ownship_state)
             sensor_measurements.append(z)
             meas_covariance_NE = sensor._params.R
-        meas_covariance_NE[0][0] = 10
+        # meas_covariance_NE[0][0] = 10 # To see that the covariance comes out correct
         
         # TODO: Set this value via 
         meas_covariance_XY = np.asarray([[meas_covariance_NE[1][1], 0], [0, meas_covariance_NE[0][0]]])
@@ -498,9 +498,7 @@ class VIMMJIPDA(ITracker):
         # TODO: Add functionality for several sensors
 
         # print(sensor_measurements)
-        #Apply changes to measurements here so that they will fit into the VIMMJIPDA
-        # TODO: see if I need to adjust the measurements. The measurements should come in tuples [Meas: [x,y], Meas: [x,y], Meas: [x,y], etc.]. Or maybe without the meas.
-        # TODO: Check if I need to adjust the ownship state
+        # Apply changes to measurements here so that they will fit into the VIMMJIPDA
         # The measurements already have added noise
         """ The ownship position needs to be a construct.State object.
         This comes on the form Construct.State(Mean, Covariance, timestamp, ID)
@@ -529,10 +527,10 @@ class VIMMJIPDA(ITracker):
         sensor_measurement = set() #Look at import_data.py to see how to transform data
         # print(type(sensor_measurement))
 
-        new_meas = False
+        new_meas = False # Create a variable to see if we are on a timestep that matches with sensor measurement rates
         for sensor in sensor_measurements:
             for meas in sensor:
-                # print(meas, type(meas))
+                # print(meas, type(meas), " Time: ", t)
                 # for do_idx, do_state, do_length, do_width in true_do_states:
                 #     print(do_state[0], do_state[1])
                 if not np.isnan(meas[0]) and not np.isnan(meas[1]):
@@ -540,19 +538,24 @@ class VIMMJIPDA(ITracker):
                     # TODO: Add Functionality to choose if Filter knows the measurement Cov or not
                     # sensor_measurement.add(Measurement(values, measurement_params['cart_cov'],  t)) # Choose this if Tracker should not know meas cov
                     sensor_measurement.add(Measurement(values, meas_covariance_XY,  t)) # Choose this if Tracker should know meas cov
-                    new_meas = True
         
+        # Check if this is a timestep with measurements
+        for sensor in self.sensors:
+            # Loop through all DO
+            for i, (_, xs, length, width) in enumerate(true_do_states):
+                if ((t - sensor._prev_meas_time[i]) % (1 / sensor._params.measurement_rate) == 0):
+                    new_meas = True
+            
+        # Run the VIMMJIPDA Tracker at the same rate as sensor measurement rates
         if new_meas:
             self._manager.step(sensor_measurement, float(t), ownship=ownship_pos)
 
 
-
-
         tracks = []
-        # for track in self._manager.tracks:
-        #     print(track)
+        for track in self._manager.tracks:
+            print("Timestep: ", t , " ",  track)
 
-        
+        # TODO: Add check to see if track is active or inactive
         #TODO: Finish extracting the tracks from the manager and into the tracks variable
         for track in self._manager.tracks:
             if track.index > len(self._means):
@@ -608,7 +611,7 @@ class VIMMJIPDA(ITracker):
 
 
     def get_track_information(self) -> Tuple[list, list]:
-        #TODO sjekk denne på nytt når track er implementert ferdig
+        # TODO: hent ut alle tracks
 
         tracks = []
         for track in self._manager.tracks:

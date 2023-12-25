@@ -552,16 +552,22 @@ class VIMMJIPDA(ITracker):
 
 
         tracks = []
-        for track in self._manager.tracks:
-            print("Timestep: ", t , " ",  track)
+        # for track in self._manager.tracks:
+        #     print("Timestep: ", t , " ",  track)
 
         # TODO: Add check to see if track is active or inactive
-        #TODO: Finish extracting the tracks from the manager and into the tracks variable
+        # TODO: Finish extracting the tracks from the manager and into the tracks variable
         for track in self._manager.tracks:
             if track.index > len(self._means):
                 self._means.append(np.array([0,0,0,0]))
+                print("Test1")
             if track.index > len(self._covs):
                 self._covs.append(np.eye(4))
+                print("Test2")
+            if track.index > len(self._length_upd):
+                self._length_upd.append(true_do_states[0][2])
+            if track.index > len(self._width_upd):
+                self._width_upd.append(true_do_states[0][3])
 
 
             # print(type(track))
@@ -581,8 +587,8 @@ class VIMMJIPDA(ITracker):
                         [cov_xy[0][1][2], cov_xy[0][0][1], cov_xy[0][3][1], cov_xy[0][1][1]]
                 ])
             # print(track.index)
-            self._means[track.index- 1] = mean_NE
-            self._covs[track.index -1] = cov_NE
+            self._means[track.index - 1] = mean_NE
+            self._covs[track.index - 1] = cov_NE
             # print(mean_NE, type(mean_NE), 'mean \n')
 
             
@@ -601,9 +607,8 @@ class VIMMJIPDA(ITracker):
                     self._width_upd[track.index - 1]
                 )
             )
-            
-
-
+        
+        
         #Return tracks and sensor_measurements
         return tracks, sensor_measurements
 
@@ -617,11 +622,11 @@ class VIMMJIPDA(ITracker):
         for track in self._manager.tracks:
             tracks.append(
                 (
-                    self._labels[0],
-                    self._means[0],
-                    self._covs[0],
-                    self._length_upd[0],
-                    self._width_upd[0]
+                    track.index,
+                    self._means[track.index-1],
+                    self._covs[track.index-1],
+                    self._length_upd[track.index-1],
+                    self._width_upd[track.index-1]
                 )
             )
         return tracks, self._NIS

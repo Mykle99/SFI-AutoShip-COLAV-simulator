@@ -1,4 +1,4 @@
-name: "VIMMJIPDA"
+name: "JIPDA vs. Kalman Filter: Head-on scenario"
 save_scenario: False
 t_start: 0.0
 t_end: 400.0
@@ -8,7 +8,7 @@ map_size: [15000.0, 12500.0]
 map_origin_enu: [37000.0, 6950450.0]
 map_data_files: ["More_og_Romsdal_utm33.gdb"]
 new_load_of_map_data: False
-n_episodes: 5
+n_episodes: 500
 type: HO
 n_random_ships: 1
 ship_list:
@@ -124,9 +124,10 @@ ship_list:
     #       colregs_violation_cost: 100.0
     #       Q: [1.0, 1.0]
     tracker:
-      kf:
-        P_0: [49.1, 49.1, 0.11, 0.11]
-        q: 0.15
+      # kf:
+      #   P_0: [49.1, 49.1, 0.11, 0.11]
+      #   q: 0.15
+      god_tracker: ""
     sensors:
       - radar:
           max_range: 2000.0

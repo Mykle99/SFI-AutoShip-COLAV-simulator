@@ -4,8 +4,8 @@ import numpy as np
 tracker_params = dict()
 tracker_params['maximum_velocity'] = 40
 tracker_params['init_Pvel'] = 10**2
-tracker_params['P_D'] = 0.92
-tracker_params['clutter_density'] = 5e-7
+tracker_params['P_D'] = 0.92 
+tracker_params['clutter_density'] = 5e-7 
 tracker_params['gamma'] = 3.5**2
 tracker_params['survival_prob'] = 0.999
 tracker_params['birth_intensity'] = 1e-7
@@ -25,7 +25,7 @@ measurement_params['bearing_cov'] = ((np.pi/180)*1)**2
 process_params = dict()
 process_params['init_mode_probs']=np.array([0.8,0.1,0.1])
 process_params['cov_CV_low'] = 0.1**2
-process_params['cov_CV_high'] = 1.5**2
+process_params['cov_CV_high'] = 0.15 # Changed for testing, orginal value 1.5**2
 process_params['cov_CT'] = 0.02**2
 process_params['cov_CV_single'] = 1.5**2
 

@@ -25,19 +25,19 @@ ship_list:
         K_i: 0.0
         max_cross_track_error_int: 101.0
     tracker:
-      VIMMJIPDA:
-        IMM_off: True
-        single_target: True
-        visibility_off: True
-      # kf:
-      #   P_0: [49.1, 49.1, 0.11, 0.11]
-      #   q: 0.15
+      # VIMMJIPDA:
+        # IMM_off: True
+        # single_target: True
+        # visibility_off: True
+      kf:
+        P_0: [49.1, 49.1, 0.11, 0.11]
+        q: 0.15
     sensors:
       - radar:
           max_range: 2000.0
           measurement_rate: 0.5
-          R: [25.0, 25.0]
-          R_true: [25.0, 25.0]
+          R: [10.0, 10.0]
+          R_true: [10.0, 10.0]
     controller:
       flsh:
         K_p_u: 3.0

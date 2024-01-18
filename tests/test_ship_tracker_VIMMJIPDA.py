@@ -72,17 +72,19 @@ if __name__ == "__main__":
     
     
 
-    # folder_path = '/home/ragnarnw/Github_test/Plotting_SR_2023/'
-    # folder_path_backup = '/home/ragnarnw/Github_test/Plotting_SR_2023/Backup/'
-    # file_name = 'Test1_KF'
-    # file_name_backup = 'Test1_KF_backup'
+    folder_path = '/home/ragnar/Github_test/Plotting_SR_2023/'
+    folder_path_backup = '/home/ragnar/Github_test/Plotting_SR_2023/Backup/'
+    # file_name = 'Test3_VIMMJIPDA'
+    # file_name_backup = 'Test3_VIMMJIPDA'
+    file_name = 'Test3_KF'
+    file_name_backup = 'Test3_KF'
 
-    # # 1000 funker ikke av en eller annen grunn, så holder meg til 500 enn så lenge
-    # with open(folder_path + file_name, 'wb') as file:
-    #     pickle.dump(output[0]['episode_simdata_list'], file)
+    # 1000 funker ikke av en eller annen grunn, så holder meg til 500 enn så lenge
+    with open(folder_path + file_name, 'wb') as file:
+        pickle.dump(output[0]['episode_simdata_list'], file)
 
-    # with open(folder_path_backup + file_name_backup, 'wb') as file:
-    #     pickle.dump(output[0]['episode_simdata_list'], file)
+    with open(folder_path_backup + file_name_backup, 'wb') as file:
+        pickle.dump(output[0]['episode_simdata_list'], file)
 
     # folder_path = '/home/ragnarnw/Github_test/Plotting_SR_2023/'
     # file_name_backup = 'Test1_termination_VIMMJIPDA'

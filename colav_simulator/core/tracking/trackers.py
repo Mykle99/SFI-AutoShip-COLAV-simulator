@@ -555,8 +555,6 @@ class VIMMJIPDA(ITracker):
         # for track in self._manager.tracks:
         #     print("Timestep: ", t , " ",  track)
 
-        # TODO: Add check to see if track is active or inactive
-        # TODO: Finish extracting the tracks from the manager and into the tracks variable
         for track in self._manager.tracks:
             if track.index > len(self._means):
                 self._means.append(np.array([0,0,0,0]))
@@ -596,6 +594,10 @@ class VIMMJIPDA(ITracker):
             # print('cov NE',cov_NE, type(cov_NE), '\n')
         # print(true_do_states, 'true states')
         # print(self._labels, 'labels')
+        # print(self._labels, 'labels')
+        #TODO: Move this into loop for more tracks than 1
+            
+        # print(self._labels, 'labels')  
         #TODO: Move this into loop for more tracks than 1
             
             tracks.append(
@@ -616,8 +618,6 @@ class VIMMJIPDA(ITracker):
 
 
     def get_track_information(self) -> Tuple[list, list]:
-        # TODO: hent ut alle tracks
-
         tracks = []
         for track in self._manager.tracks:
             tracks.append(

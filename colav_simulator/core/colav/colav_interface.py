@@ -511,7 +511,7 @@ class PSBMPCWrapper(ICOLAV):
         self._trajectory_os_best = []
         self._min_depth = 5
         self._min_distance_to_land =  10
-        self._radius_of_coverage = 450
+        self._radius_of_coverage = 350
         self._angle_of_coverage_behind = 15
         self._obstacles = []
         self._obs_pred_hor_T = self._psbmpc_params.get_par_double(0)
@@ -698,7 +698,7 @@ class PSBMPCWrapper(ICOLAV):
         speed_ref = references[3, 0]
         if t - self._t_run_psbmpc_last >= 1.5:
 
-            if t - self._t_upd_static_obstacle_last >= 3.0:
+            if t - self._t_upd_static_obstacle_last >= 1.5:
                 ownship_state_cor = [ownship_state[1], ownship_state[0], math.degrees(ownship_state[2])]
                 rel_grounding_hazards = map_functions.extract_grounding_hazards_from_relevant_sector_in_enc(
                     self._grounding_hazards_in_enc, ownship_state_cor, self._radius_of_coverage, self._angle_of_coverage_behind, enc, False

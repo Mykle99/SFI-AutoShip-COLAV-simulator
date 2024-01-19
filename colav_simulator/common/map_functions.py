@@ -171,7 +171,7 @@ def extract_safe_sea_area(
 ) -> MultiPolygon | list:
     """Extracts the safe sea area from the ENC as a list of polygons.
 
-    This includes sea polygons that are above the vessel`s minimum depth.
+    This includes sea polygons that are above the vessel's minimum depth.
 
     Args:
         - min_depth (int): The minimum depth required for the vessel to avoid grounding.
@@ -387,12 +387,12 @@ def create_region_polygons_from_voronoi(vor: scipy_spatial.Voronoi, enc: Optiona
 
 
 def create_ship_polygon(x: float, y: float, heading: float, length: float, width: float, length_scaling: float = 1.0, width_scaling: float = 1.0) -> Polygon:
-    """Creates a ship polygon from the ship`s position, heading, length and width.
+    """Creates a ship polygon from the ship's position, heading, length and width.
 
     Args:
-        x (float): The ship`s north position
-        y (float): The ship`s east position
-        heading (float): The ship`s heading
+        x (float): The ship's north position
+        y (float): The ship's east position
+        heading (float): The ship's heading
         length (float): Length of the ship
         width (float): Width of the ship
         length_scaling (float, optional): Length scale factor. Defaults to 1.0.
@@ -451,7 +451,7 @@ def find_minimum_depth(vessel_draft: float, enc: ENC):
     """Find the minimum seabed depth for the given vessel draft (for it to avoid grounding)
 
     Args:
-        vessel_draft (float): The vessel`s draft.
+        vessel_draft (float): The vessel's draft.
 
     Returns:
         float: The minimum seabed depth required for a safe journey for the vessel.
@@ -467,7 +467,7 @@ def find_minimum_depth(vessel_draft: float, enc: ENC):
 def extract_relevant_grounding_hazards(vessel_min_depth: int, enc: ENC) -> list:
     """Extracts the relevant grounding hazards from the ENC as a list of (multi) polygons.
 
-    This includes land, shore and seabed polygons that are below the vessel`s minimum depth.
+    This includes land, shore and seabed polygons that are below the vessel's minimum depth.
 
     Args:
         vessel_min_depth (int): The minimum depth required for the vessel to avoid grounding.
@@ -483,7 +483,7 @@ def extract_relevant_grounding_hazards(vessel_min_depth: int, enc: ENC) -> list:
 def extract_relevant_grounding_hazards_as_union(vessel_min_depth: int, enc: ENC, buffer: Optional[float] = None, show_plots: bool = False) -> list:
     """Extracts the relevant grounding hazards from the ENC as a multipolygon.
 
-    This includes land, shore and seabed polygons that are below the vessel`s minimum depth.
+    This includes land, shore and seabed polygons that are below the vessel's minimum depth.
 
     Args:
         vessel_min_depth (int): The minimum depth required for the vessel to avoid grounding.
@@ -512,57 +512,6 @@ def extract_relevant_grounding_hazards_as_union(vessel_min_depth: int, enc: ENC,
             enc.draw_polygon(hazard, color="red", alpha=0.5)
     return filtered_relevant_hazards
 
-
-def extract_grounding_hazards_from_entire_enc(
-    vessel_min_depth: float, 
-    d_from_land_min : float,
-    enc: ENC
-    ) -> list[MultiPolygon]:
-    """Extracts all relevant grounding hazards from an entire ENC as a list of MultiPolygons.
-    Hazards such as land areas (regular land, islands, islets, skerries), shores, shallow waters, 
-    as well as areas in proximity to land areas.
-
-    The minimum acceptable water depth for the given vessel is taken into account. 
-    The minimum tolerated distance from the vessel to land/shore is also taken into account. 
-
-    Args:
-    - vessel_min_depth (float): The minimum depth required for the vessel to avoid grounding.
-    - d_from_land_min (float): The minimum acceptable length from ship to land/shore.
-    - enc (senc.ENC): The ENC to check for grounding hazards.
-
-    Returns:
-    list[MultiPolygon]: All grounding hazards (as outlined above) for the entire ENC.
-    """
-    # Defining relevant geometries.
-    land = enc.land.geometry
-    shore = enc.shore.geometry
-    seabed_0 = enc.seabed[0].geometry
-    seabed_vessel_min_depth = enc.seabed[vessel_min_depth].geometry
-    
-    # Finding the dangerous seabed for the vessel based on its draught.
-    dangerous_seabed = seabed_0.difference(seabed_vessel_min_depth)
-
-    # Finding a buffer around the land and shore geometry.
-    land_buffer = land.buffer(d_from_land_min)
-    shore_buffer = shore.buffer(d_from_land_min)
-    
-    # Finding where the buffer intersects with seabed_0 and shore.
-    land_seabed_0_intersection = land_buffer.intersection(seabed_0)
-    land_shore_intersection = shore_buffer.intersection(seabed_0)
-
-    # Combining the dangerous seabed with the intersection polygons.
-    relevant_hazards = [
-        dangerous_seabed.union(land_seabed_0_intersection).union(land).union(
-        land_shore_intersection).union(shore)#.union(seabed_vessel_min_depth)
-    ]
-    
-    filtered_relevant_hazards = []
-    for hazard in relevant_hazards:
-        filtered_relevant_hazards.append(
-            MultiPolygon(Polygon(p.exterior) for p in hazard.geoms if isinstance(p, Polygon))
-        )
-        
-    return filtered_relevant_hazards
 
 def extract_grounding_hazards_from_relevant_sector_in_enc(
     grounding_hazards : list[MultiPolygon],
@@ -1559,7 +1508,7 @@ def compute_distance_vectors_to_grounding(vessel_trajectory: np.ndarray, minimum
     """Computes the distance vectors to grounding at each step of the given vessel trajectory.
 
     Args:
-        - vessel_trajectory (np.ndarray): The vessel`s trajectory, 2 x n_samples.
+        - vessel_trajectory (np.ndarray): The vessel's trajectory, 2 x n_samples.
         - minimum_vessel_depth (int): The minimum depth required for the vessel to avoid grounding.
         - enc (ENC): The ENC to check for grounding.
         - show_plots (bool, optional): Option for visualization. Defaults to False.
@@ -1606,7 +1555,7 @@ def compute_closest_grounding_dist(vessel_trajectory: np.ndarray, minimum_vessel
     """Computes the closest distance to grounding for the given vessel trajectory.
 
     Args:
-        - vessel_trajectory (np.ndarray): The vessel`s trajectory, 2 x n_samples.
+        - vessel_trajectory (np.ndarray): The vessel's trajectory, 2 x n_samples.
         - minimum_vessel_depth (int): The minimum depth required for the vessel to avoid grounding.
         - enc (senc.ENC): The ENC to check for grounding.
 
@@ -2168,3 +2117,47 @@ def multi_polygon_to_list_of_ndarray_flip_x_y(filtered_relevant_hazards: list[Mu
                     temp_polygon_np = np.append(temp_polygon_np, [point[1], point[0]])
                 polygon_list.append(temp_polygon_np)
     return polygon_list
+
+
+def extract_grounding_hazards_method_from_GPU_paper(
+    filtered_relevant_hazards : list[MultiPolygon],    
+    radius_of_coverage : float,
+    ownship_state : np.ndarray
+    ) -> list[MultiPolygon]:
+    """Extracts the relevant grounding hazards from a list[MultiPolygon] and returns them as a multipolygon.
+    This includes land, shore and seabed polygons that are below the vessel's minimum depth.
+
+    The implemented method is the same as the one used in: "Ship Collision Avoidance and Anti 
+    Grounding Using Parallelized Cost Evaluation in Probabilistic Scenario-Based Model Predictive Control", 
+    https://ieeexplore.ieee.org/document/9924235.
+
+    Args:
+    - filtered_relevant_hazards (list[MultiPolygon]): Grounding hazards from an ENC parameterized as polygons.
+    - radius_of_coverage (float): The radius of which to concider grounding hazards, the radius of the relevant grounding sector.  
+    - ownship_state (np.ndarray): The ownship state [x, y, psi, u, v, r].
+
+    Returns:
+        list[MultiPolygon]: The grounding hazards inside the relevant grounding sector.
+    """
+    # Defining a relevant sector.
+    ownship_x = ownship_state[0]
+    ownship_y = ownship_state[1]
+
+    # Defining a ship point.
+    ownship_point = Point(ownship_x, ownship_y)
+
+    circle_relevant_sector = Point(
+        ownship_point.x, 
+        ownship_point.y
+    ).buffer(radius_of_coverage, resolution = 100)
+
+    # Finding the intersection of relevant hazards and relevant area.
+    filtered_relevant_hazards_circle_relevant_sector_intersection = circle_relevant_sector.intersection(
+        filtered_relevant_hazards[0]
+    )
+
+    if type(filtered_relevant_hazards_circle_relevant_sector_intersection) != MultiPolygon:
+        filtered_relevant_hazards_circle_relevant_sector_intersection = \
+            MultiPolygon([filtered_relevant_hazards_circle_relevant_sector_intersection])
+
+    return filtered_relevant_hazards_circle_relevant_sector_intersection

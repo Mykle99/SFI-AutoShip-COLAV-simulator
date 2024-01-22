@@ -260,7 +260,8 @@ if __name__ == "__main__":
             "R_a": 8.0,
             "K_p": 0.06,
             "K_i": 0.002,
-            "max_cross_track_error_int": 30.0
+            "max_cross_track_error_int": 200.0,
+            "cross_track_error_int_threshold": 30.0
         }
 
         # Defining the final config_dict which is used by the COLAVBuilder.construct_colav() method

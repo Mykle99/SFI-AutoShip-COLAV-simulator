@@ -511,14 +511,14 @@ class PSBMPCWrapper(ICOLAV):
         self._trajectory_os_best = []
         self._min_depth = 5
         self._min_distance_to_land =  10
-        self._radius_of_coverage = 350
-        self._angle_of_coverage_behind = 15
+        self._radius_of_coverage = 550
+        self._angle_of_coverage_behind = 37.5
         self._obstacles = []
         self._obs_pred_hor_T = self._psbmpc_params.get_par_double(0)
         self._obs_pred_dt = self._psbmpc_params.get_par_double(1)
         _n_obs_pred_scen = self._psbmpc_params.get_par_int(1)
         self._epsilon_rdp = self._psbmpc_params.get_par_double(20)
-        self._epsilon_rdp = 30
+        self._epsilon_rdp = 25
         self._obs_pred_scen_Prob = np.ones(_n_obs_pred_scen)
         self._obs_pred_scen_Prob = self._obs_pred_scen_Prob/np.sum(self._obs_pred_scen_Prob)
         self._grounding_hazards_in_enc = None

@@ -127,5 +127,3 @@ behavior_generator:
       K_p: 0.035
       K_i: 0.0
       max_cross_track_error_int: 30.0
-
-

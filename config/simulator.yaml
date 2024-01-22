@@ -1,4 +1,4 @@
-save_scenario_results: False
+save_scenario_results: True
 verbose: True
 visualizer:
   show_liveplot: True
@@ -6,7 +6,7 @@ visualizer:
   show_measurements: False
   show_liveplot_tracks: True
   show_waypoints: True
-  zoom_in_liveplot_on_ownship: True
+  zoom_in_liveplot_on_ownship: False
   zoom_window_width: 1000.0
   show_results: True
   show_target_tracking_results: True

@@ -1,7 +1,7 @@
 name: "head_on_narrow"
 save_scenario: False
 t_start: 0.0
-t_end: 360
+t_end: 340
 dt_sim: 0.5
 utm_zone: 33
 map_size: [2250.0, 2250.0]
@@ -23,7 +23,8 @@ ship_list:
         R_a: 75.0
         K_p: 0.015
         K_i: 0.0
-        max_cross_track_error_int: 200.0
+        max_cross_track_error_int: 700.0
+        cross_track_error_int_threshold: 700.0
     tracker:
       kf:
         P_0: [49.1, 49.1, 0.11, 0.11]

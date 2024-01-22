@@ -23,7 +23,7 @@ import seacharts.enc as senc
 
 RRT_LIB_FOUND = True
 try:
-    import rrt_star_lib
+    import rrt_star_lib # type: ignore (removes error message beneath import)
 except ModuleNotFoundError as err:
     print(f"Warning: rrt_star_lib not found! Error msg: {err}")
     RRT_LIB_FOUND = False

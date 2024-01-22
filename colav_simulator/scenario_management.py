@@ -571,8 +571,7 @@ class ScenarioGenerator:
         scenario_episode_list = []
         for ep in range(config.n_episodes):
             episode = {}
-            # PSBMPCInterface and IMInterface objects are not pickleable, and thus cannot use the deepcopy method
-            try:
+            try: # The PSBMPCInterface and IMInterface objects are not pickleable, and thus cannot use the deepcopy method
                 if str(config.ship_list[0].colav.name) == "COLAVType.PSBMPC":
                     episode["ship_list"], episode["disturbance"], episode["config"] = self.generate_episode(
                         ship_list,
@@ -591,7 +590,7 @@ class ScenarioGenerator:
                         enc,
                         show_plots=show_plots,
                     )
-            except AttributeError: # all other cases where colav is not specified in the .yaml file
+            except AttributeError: # all other cases where the colav subsystem is not specified in the .yaml file
                 episode["ship_list"], episode["disturbance"], episode["config"] = self.generate_episode(
                         copy.deepcopy(ship_list),
                         copy.deepcopy(config),

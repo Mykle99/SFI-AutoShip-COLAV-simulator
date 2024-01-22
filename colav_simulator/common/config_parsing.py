@@ -76,7 +76,7 @@ def convert_settings_dict_to_paramsclass(params_class, config_dict: dict) -> Any
         return params_class.from_dict(config_dict)
     else:
         
-        raise ValueError("The 'params_class' does not have a callable 'from_dict' method. HEEEEEEEEEEEEEY params_class", type(params_class))
+        raise ValueError("The 'params_class' does not have a callable 'from_dict' method. Type params_class: ", type(params_class))
 
 
 def validate(settings: dict, schema: dict) -> None:

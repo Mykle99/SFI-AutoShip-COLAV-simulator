@@ -13,29 +13,46 @@ The main functionality is contained in the `Simulator` class of `simulator.py`, 
 </p>
 
 
-![Another simulation example](./scenarios/example_img/aalesund_random.pdf)
-<img src="./scenarios/example_img/aalesund_random.pdf">
-
+<p align="center">
+    <img src="https://github.com/NTNU-Autoship-Internal/colav_simulator/blob/main/scenarios/example_img/aalesund_random.pdf" width="500px"><br/>
+    <em>Simulation screenshot.</em>
+</p>
 
 ## Citation
 If you are using the `colav_simulator` for academic work, please use the following citation:
 ```
-@Article{Tengesdal2023_sim,
+@Article{Tengesdal2023sfse,
   author  = {Trym Tengesdal and Tor A. Johansen},
   journal = {7th IEEE Conference on Control Technology and Applications (CCTA)},
   title   = {Simulation Framework and Software Environment for Evaluating Automatic Ship Collision Avoidance Algorithms},
+  year={2023},
+  volume={},
+  number={},
+  pages={186-193},
+  doi={10.1109/CCTA54093.2023.10252863},
+}
+```
+
+If you are using `RRTs` for ship behavior generation in academic work, please also use the following citation:
+```
+@Article{Tengesdal2024csrrt,
+  author  = {Trym Tengesdal and Tom A. Pedersen and Tor A. Johansen},
+  journal = {Ocean Engineering},
+  title   = {A Comparative Study of Rapidly-exploring Random Tree Algorithms Applied to Ship Trajectory Planning and Behavior Generation},
   year    = {2023},
+  note    = {Submitted},
 }
 ```
 
 ## Dependencies
 Are all outlined in setup.cfg. Non-pip packages to install are
 
-- seacharts: https://github.com/trymte/seacharts
-- colav_evaluation_tool: https://github.com/trymte/colav_evaluation_tool
+- seacharts: https://github.com/trymte/seacharts for ENC support
+- rrt-rs: https://github.com/NTNU-Autoship-Internal/rrt-rs optionally for ship behavior generation
+- colav_evaluation_tool: https://github.com/trymte/colav_evaluation_tool (optional dependency only for the `test_simulation_and_evaluation.py` test file)
 
 ## Generic Install Instructions
-`seacharts`and the `colav_evaluation_tool` are non-pip package dependencies in the simulator. Install these first as editable packages first using `pip install -e .` in their respective root folders. Then, install this simulator package using the same `pip install -e .` command inside the `colav_simulator` root folder. All of these packages should be installed using the same Python environment (e.g. a virtual or Conda environment).
+`seacharts` and the `colav_evaluation_tool` (optional) are non-pip package dependencies in the simulator. Install these first as editable packages first using `pip install -e .` in their respective root folders. For `rrt-rs` (also optional), follow the install instructions at <https://github.com/NTNU-Autoship-Internal/rrt-rs>. Then, install this simulator package using the same `pip install -e .` command inside the `colav_simulator` root folder. All of these packages should be installed using the same Python environment (e.g. a virtual or Conda environment).
 
 To use `seacharts` in the simulator, you should download `.gdb` files from <https://kartkatalog.geonorge.no> in UTM 32 or 33 (see <https://github.com/trymte/seacharts> for instructions), and put into the `data/external` folder in the seacharts package directory. Otherwise, the module will not find any ENC data to use.
 
@@ -80,6 +97,7 @@ git clone https://github.com/trymte/colav_evaluation_tool.git
 cd colav_evaluation_tool
 pip install -e .
 ```
+and rrt-rs using instructions at <https://github.com/NTNU-Autoship-Internal/rrt-rs>.
 
 Install dependencies for the simulator. Go to the colav_simulator directory and run
 `pip install -e .`
@@ -211,7 +229,9 @@ Look at the `schemas` folder under the package source code for further clues con
 
 Seacharts is used to provide access to Electronic Navigational Charts, and an `ENC` object is used inside the `ScenarioGenerator` class for this. One must here make sure that the seacharts package is properly setup with `.gdb` data in the `data/external` folder of the package, with correctly matching `UTM` zone for the chart data. An example default `seacharts.yaml`config file for the module is found under `config/`. One can specify map data, map origin, map size etc. for the ENC object from the scenario `.yaml`config file.
 
-Troubles with "freezing" when you generate a scenario? Check if you have specified `new_load_of_map_data=True`in the scenario configuration file. If this is false, and the map data is not loaded/wrong data is used, errors will happen.
+Troubles with "freezing" when you generate a scenario? Check if you have specified `new_load_of_map_data=True`in the scenario configuration file. If this is false, and the map data is not loaded/wrong data is used, errors can happen.
+
+In addition to random waypoint generation and/or straight line motion generation for the own-ship and/or target ships through the `BehaviorGenerator` class, the `rrt-rs` library can optionally be used for generating random ship behaviors, where Rapidly-exploring Random Trees (RRTs) are built for each ship initial state. See the source code for the `BehaviorGenerator` for more information.
 
 ### Visualizer
 

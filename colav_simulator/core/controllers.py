@@ -50,12 +50,17 @@ class SHPIDParams:
         self.K_d = K_d
         self.K_i = K_i
         self.z_diff_max = z_diff_max
-        self.V = np.array([[0.0, 0.0, 0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 1.0, 0.0, 0.0, 0.0]])
+        self.V = np.array(
+            [[0.0, 0.0, 0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 1.0, 0.0, 0.0, 0.0]]
+        )
 
     @classmethod
     def from_dict(cls, config_dict: dict):
         params = SHPIDParams(
-            K_p=np.diag(config_dict["K_p"]), K_d=np.diag(config_dict["K_d"]), K_i=np.diag(config_dict["K_i"]), z_diff_max=np.array(config_dict["z_diff_max"])
+            K_p=np.diag(config_dict["K_p"]),
+            K_d=np.diag(config_dict["K_d"]),
+            K_i=np.diag(config_dict["K_i"]),
+            z_diff_max=np.array(config_dict["z_diff_max"]),
         )
         params.z_diff_max[2] = np.deg2rad(params.z_diff_max[2])
         return params
@@ -322,7 +327,9 @@ class MIMOPID(IController):
         return tau
 
 
-def pole_placement(Mmtrx: np.ndarray, Dmtrx: np.ndarray, wn: np.ndarray, zeta) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def pole_placement(
+    Mmtrx: np.ndarray, Dmtrx: np.ndarray, wn: np.ndarray, zeta
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Dynamic positioning controller pole placement based on Ex. 12.7 in Fossen 2011.
 
     Args:
@@ -369,16 +376,21 @@ class FLSH(IController):
         if abs(speed_error) <= self._params.speed_error_int_threshold:
             self._speed_error_int += speed_error * dt
 
-        if abs(self._speed_error_int) > self._params.max_speed_error_int:
-            self._speed_error_int -= speed_error * dt
+        if abs(speed_error) < 0.05:
+            self._speed_error_int = 0.0
 
         if abs(psi_error) <= self._params.psi_error_int_threshold:
             self._psi_error_int = mf.unwrap_angle(self._psi_error_int, psi_error * dt)
 
-        if abs(self._psi_error_int) > self._params.max_speed_error_int:
-            self._psi_error_int = mf.unwrap_angle(self._psi_error_int, -psi_error * dt)
+        if abs(psi_error) < 0.5 * np.pi / 180.0:
+            self._psi_error_int = 0.0
 
-        self._psi_error_int = mf.wrap_angle_to_pmpi(self._psi_error_int)
+        self._speed_error_int = mf.sat(
+            self._speed_error_int, -self._params.max_speed_error_int, self._params.max_speed_error_int
+        )
+        self._psi_error_int = mf.sat(
+            self._psi_error_int, -self._params.max_psi_error_int, self._params.max_psi_error_int
+        )
 
     def compute_inputs(self, refs: np.ndarray, xs: np.ndarray, dt: float) -> np.ndarray:
         """Computes inputs based on the proposed control law.
@@ -424,19 +436,32 @@ class FLSH(IController):
             C_RB = mf.coriolis_matrix_rigid_body(self._model_params.M_rb, nu)
             C_A = mf.coriolis_matrix_added_mass(self._model_params.M_a, nu)
             Cvv = C_RB @ nu + C_A @ nu
-            Dvv = (self._model_params.D_l + self._model_params.D_u * abs(nu[0]) + self._model_params.D_v * abs(nu[1]) + self._model_params.D_r * abs(nu[2])) @ nu
+            Dvv = (
+                self._model_params.D_l
+                + self._model_params.D_u * abs(nu[0])
+                + self._model_params.D_v * abs(nu[1])
+                + self._model_params.D_r * abs(nu[2])
+            ) @ nu
             l_r = abs(self._model_params.r_t[0])
 
         speed_error = u_d - nu[0]
         psi_error: float = mf.wrap_angle_diff_to_pmpi(psi_d_unwrapped, psi_unwrapped)
         self.update_integrators(speed_error, psi_error, dt)
 
-        # print(f"speed error int: {self._speed_error_int} | speed error: {speed_error} | psi error int: {self._psi_error_int} | psi error: {psi_error}")
-        # if abs(speed_error) < 0.01:
-        #     print(f"speed error int: {self._speed_error_int} | speed error: {speed_error}")
+        # print(
+        #     f"speed error int: {self._speed_error_int} | speed error: {speed_error} | psi error int: {self._psi_error_int} | psi error: {psi_error}"
+        # )
 
-        Fx = Cvv[0] + Dvv[0] + Mmtrx[0, 0] * (self._params.K_p_u * speed_error + self._params.K_i_u * self._speed_error_int)
-        Fy = -(Mmtrx[2, 2] / l_r) * (self._params.K_p_psi * psi_error + self._params.K_d_psi * (r_d - nu[2]) + self._params.K_i_psi * self._psi_error_int)
+        Fx = (
+            Cvv[0]
+            + Dvv[0]
+            + Mmtrx[0, 0] * (self._params.K_p_u * speed_error + self._params.K_i_u * self._speed_error_int)
+        )
+        Fy = -(Mmtrx[2, 2] / l_r) * (
+            self._params.K_p_psi * psi_error
+            + self._params.K_d_psi * (r_d - nu[2])
+            + self._params.K_i_psi * self._psi_error_int
+        )
 
         tau = np.array([float(Fx), float(Fy), float(-Fy * l_r)])
 

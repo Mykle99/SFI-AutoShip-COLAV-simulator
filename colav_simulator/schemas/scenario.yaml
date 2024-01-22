@@ -106,6 +106,12 @@ rl_observation_type:
       required: False
       type: string
       empty: True
+    dict_observation:
+      required: False
+      type: list
+      minlength: 1
+      schema:
+        type: string
 rl_action_type:
   required: False
   type: string
@@ -347,6 +353,9 @@ ship_list:
                 required: True
                 type: float
               max_cross_track_error_int:
+                required: True
+                type: float
+              cross_track_error_int_threshold:
                 required: True
                 type: float
           ktp:

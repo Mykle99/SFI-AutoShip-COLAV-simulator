@@ -41,6 +41,7 @@ class COLAVEnvironment(gym.Env):
         scenario_config: Optional[sm.ScenarioConfig] = None,
         scenario_config_file: Optional[pathlib.Path] = None,
         scenario_files: Optional[list] = None,
+        reload_map: Optional[bool] = True,
         rewarder_config: Optional[rw.Config] = None,
         render_mode: Optional[str] = "human",
         render_update_interval: Optional[float] = 0.2,
@@ -58,6 +59,7 @@ class COLAVEnvironment(gym.Env):
             scenario_config (Optional[sm.ScenarioConfig]): Scenario configuration. Defaults to None.
             scenario_config_file (Optional[pathlib.Path]): Scenario configuration file. Defaults to None.
             scenario_files (Optional[list]): List of scenario files. Defaults to None.
+            reload_map (Optional[bool]): Whether to reload the scenario ENC map. Defaults to False.
             rewarder_config (Optional[rw.Config]): Rewarder configuration. Defaults to None.
             render_mode (Optional[str]): Render mode. Defaults to "human".
             render_update_interval (Optional[float]): Render update interval. Defaults to 0.2.
@@ -75,9 +77,8 @@ class COLAVEnvironment(gym.Env):
         self.scenario_config: Optional[sm.ScenarioConfig] = scenario_config
         self.scenario_config_file: Optional[pathlib.Path] = scenario_config_file
         self.scenario_files: Optional[list] = scenario_files
+        self.reload_map: bool = reload_map
         self._has_init_generated: bool = False
-
-        self.rewarder = rw.Rewarder(config=rewarder_config)
 
         self.done = False
         self.steps: int = 0
@@ -89,6 +90,8 @@ class COLAVEnvironment(gym.Env):
         self.test_mode = test_mode
         self.verbose: bool = verbose
         self.current_frame: np.ndarray = np.zeros((1, 1, 3), dtype=np.uint8)
+
+        self.rewarder: rw.Rewarder = rw.Rewarder(env=self, config=rewarder_config)
 
     def close(self):
         """Closes the environment. To be called after usage."""
@@ -111,13 +114,7 @@ class COLAVEnvironment(gym.Env):
         Returns:
             bool: Whether the current state is a terminal state
         """
-        collided = self.simulator.determine_ownship_collision()
-        grounded = self.simulator.determine_ownship_grounding()
-        if self.verbose and collided:
-            print(f"Collision at t = {self.simulator.t}!")
-        if self.verbose and grounded:
-            print(f"Grounding at t = {self.simulator.t}!")
-        return collided or grounded
+        return self.simulator.is_terminated(self.verbose)
 
     def _is_truncated(self) -> bool:
         """Check whether the current state is a truncated state (time limit reached).
@@ -125,13 +122,13 @@ class COLAVEnvironment(gym.Env):
         Returns:
             bool: Whether the current state is a truncated state
         """
-        truncated = self.simulator.t > self.simulator.t_end
-        if self.verbose and truncated:
-            print("Time limit reached!")
-        return truncated
+        return self.simulator.is_truncated(self.verbose)
 
     def _generate(
-        self, scenario_config: Optional[sm.ScenarioConfig] = None, scenario_config_file: Optional[pathlib.Path] = None, reload_map: Optional[bool] = None
+        self,
+        scenario_config: Optional[sm.ScenarioConfig] = None,
+        scenario_config_file: Optional[pathlib.Path] = None,
+        reload_map: Optional[bool] = None,
     ) -> None:
         """Generate new scenario from the input configuration.
 
@@ -142,7 +139,9 @@ class COLAVEnvironment(gym.Env):
         """
         # if self.verbose:
         #     print("Generating new scenario...")
-        self.scenario_data_tup = self.scenario_generator.generate(config=scenario_config, config_file=scenario_config_file, new_load_of_map_data=reload_map)
+        self.scenario_data_tup = self.scenario_generator.generate(
+            config=scenario_config, config_file=scenario_config_file, new_load_of_map_data=reload_map
+        )
         self.scenario_config = self.scenario_data_tup[0][0]["config"]
 
     def _info(self, obs: Observation, action: Optional[Action] = None) -> dict:
@@ -199,18 +198,28 @@ class COLAVEnvironment(gym.Env):
         self.done = False
 
         if not self._has_init_generated:
-            self._generate(scenario_config=self.scenario_config, scenario_config_file=self.scenario_config_file)
+            self._generate(
+                scenario_config=self.scenario_config,
+                scenario_config_file=self.scenario_config_file,
+                reload_map=self.reload_map,
+            )
             self._has_init_generated = True
 
         assert self.scenario_config is not None, "Scenario config not initialized!"
         (scenario_episode_list, scenario_enc) = self.scenario_data_tup
         if not scenario_episode_list:
-            self._generate(scenario_config=self.scenario_config, scenario_config_file=self.scenario_config_file, reload_map=False)
+            self._generate(
+                scenario_config=self.scenario_config, scenario_config_file=self.scenario_config_file, reload_map=False
+            )
         (scenario_episode_list, scenario_enc) = self.scenario_data_tup
         episode_data = scenario_episode_list.pop(0)
 
         self.simulator.initialize_scenario_episode(
-            ship_list=episode_data["ship_list"], sconfig=episode_data["config"], enc=scenario_enc, disturbance=episode_data["disturbance"], ownship_colav_system=None
+            ship_list=episode_data["ship_list"],
+            sconfig=episode_data["config"],
+            enc=scenario_enc,
+            disturbance=episode_data["disturbance"],
+            ownship_colav_system=None,
         )
         self.ownship = self.simulator.ownship
 
@@ -257,7 +266,9 @@ class COLAVEnvironment(gym.Env):
     def render(self):
         """Renders the environment in 2D."""
         img = None
-        self._viewer2d.update_live_plot(self.simulator.t, self.enc, self.simulator.ship_list, self.simulator.recent_sensor_measurements)
+        self._viewer2d.update_live_plot(
+            self.simulator.t, self.enc, self.simulator.ship_list, self.simulator.recent_sensor_measurements
+        )
 
         if self.render_mode == "rgb_array":
             self.current_frame = self._viewer2d.get_live_plot_image()

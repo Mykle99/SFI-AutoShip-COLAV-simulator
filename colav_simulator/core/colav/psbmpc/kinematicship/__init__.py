@@ -16,6 +16,7 @@ def to_dict(self) -> dict:
         "LOS_LD" : self.get_LOS_LD(),
         "LOS_K_i" : self.get_LOS_K_i(),
         "active_waypoint" : self.get_wp_counter(),
+        "path_prediction_shape" : self.get_path_prediction_shape()
     }
     return output
 
@@ -32,6 +33,15 @@ def from_dict(cls, data: dict) -> PSBMPCInterface.KinematicShip:
     kinematicship.set_LOS_LD(data["LOS_LD"])
     kinematicship.set_LOS_K_i(data["LOS_K_i"])
     kinematicship.set_wp_counter(data["active_waypoint"])
+
+    if isinstance(data["path_prediction_shape"], str):
+        if data["path_prediction_shape"] == "SMOOTH":
+            data["path_prediction_shape"] = PSBMPCInterface.PathPredictionShape.SMOOTH
+        elif data["path_prediction_shape"] == "LINEAR":
+            data["path_prediction_shape"] = PSBMPCInterface.PathPredictionShape.LINEAR
+
+    kinematicship.set_path_prediction_shape(data["path_prediction_shape"])
+    
     return kinematicship
 
 

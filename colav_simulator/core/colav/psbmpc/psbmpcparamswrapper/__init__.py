@@ -1,6 +1,7 @@
 from colav_simulator.core.colav.psbmpc import PSBMPCInterface
 from colav_simulator.core.colav.psbmpc.psbmpcparams import *
 from colav_simulator.core.colav.psbmpc.kinematicship import *
+from colav_simulator.core.colav.psbmpc.obstaclepredictor import *
 from colav_simulator.core.colav.psbmpc.cpe import *
 from dataclasses import dataclass
 
@@ -8,10 +9,11 @@ from dataclasses import dataclass
 
 @dataclass
 class PSBMPCParamsWrapper:
-    """Parameter wrapper class for the three classes which has settable parameters and are used by the PSBMPC algorithm."""
+    """Parameter wrapper class for the four classes which has settable parameters and are used by the PSBMPC algorithm."""
 
     psbmpcparams: PSBMPCInterface.PSBMPCParams = None
     ownshipparams: PSBMPCInterface.KinematicShip = None
+    targetshipparams: PSBMPCInterface.ObstaclePredictor = None
     cpeparams: PSBMPCInterface.CPE = None
 
 
@@ -26,6 +28,7 @@ def to_dict(self) -> dict:
     output = {
         "psbmpc_params" : PSBMPCInterface.PSBMPCParams.to_dict(self.psbmpcparams),
         "psbmpc_ownship_params" : PSBMPCInterface.KinematicShip.to_dict(self.ownshipparams),
+        "psbmpc_targetship_params" : PSBMPCInterface.ObstaclePredictor.to_dict(self.targetshipparams),
         "psbmpc_cpe_params" : PSBMPCInterface.CPE.to_dict(self.cpeparams)
     }
     return output
@@ -37,6 +40,7 @@ def from_dict(cls, data: dict) -> PSBMPCInterface.PSBMPCParamsWrapper:
     psbmpcparamswrapper = PSBMPCInterface.PSBMPCParamsWrapper()
     psbmpcparamswrapper.psbmpcparams = PSBMPCInterface.PSBMPCParams.from_dict(data["psbmpc_params"])
     psbmpcparamswrapper.ownshipparams = PSBMPCInterface.KinematicShip.from_dict(data["psbmpc_ownship_params"])
+    psbmpcparamswrapper.targetshipparams = PSBMPCInterface.ObstaclePredictor.from_dict(data["psbmpc_targetship_params"])
     psbmpcparamswrapper.cpeparams = PSBMPCInterface.CPE.from_dict(data["psbmpc_cpe_params"])
     return psbmpcparamswrapper
 

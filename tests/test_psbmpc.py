@@ -52,6 +52,13 @@ if __name__ == "__main__":
         colav_config.layer1.psbmpc = psbmpcI.PSBMPCParamsWrapper()
         colav_config.layer1.psbmpc.psbmpcparams = psbmpcI.PSBMPCParams()
         colav_config.layer1.psbmpc.ownshipparams = psbmpcI.KinematicShip()
+        colav_config.layer1.psbmpc.targetshipparams = psbmpcI.ObstaclePredictor(
+            colav_config.layer1.psbmpc.psbmpcparams,
+            20, # r_ct
+            psbmpcI.PathPredictionShape.SMOOTH, # path_prediction_shape
+            np.array([-60, -30, 0, 30, 60]) # chi_offsets. n_do_ps = 5 when PSBMPCParams() constructor is used
+        ) # colav_config.layer1.psbmpc.ownshipparams.set_par_int(1, n_do_ps) can be used to set a desired n_do_ps
+
         colav_config.layer1.psbmpc.cpeparams = psbmpcI.CPE(cpe_ce)
 
         # layer 2
@@ -129,6 +136,12 @@ if __name__ == "__main__":
             "LOS_K_i" : 0.0,
             "active_waypoint" : 0,
             "path_prediction_shape" : psbmpcI.PathPredictionShape.SMOOTH
+        }
+
+        targetship_params = {
+            "r_ct" : 20,
+            "path_prediction_shape" : psbmpcI.PathPredictionShape.SMOOTH,
+            "chi_offsets" : np.array([-60.0, -30.0, 0.0, 30.0, 60.0]),
         }
 
         cpe_params = {
@@ -269,6 +282,7 @@ if __name__ == "__main__":
         psbmpc_wrapper_params = {
             "psbmpc_params" : psbmpc_params,
             "psbmpc_ownship_params" : ownship_params,
+            "psbmpc_targetship_params" : targetship_params,
             "psbmpc_cpe_params" : cpe_params
         }
 

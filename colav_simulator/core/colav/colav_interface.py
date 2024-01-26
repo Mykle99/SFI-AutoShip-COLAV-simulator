@@ -484,7 +484,14 @@ class PSBMPCWrapper(ICOLAV):
         assert config.layer3.los is not None, "LOS guidance must be on the third layer for the PSBMPC wrapper."
         self._los = guidance.LOSGuidance(config.layer3.los)
 
-        self._obstacle_predictor = psbmpcI.ObstaclePredictor(self._psbmpc_params)
+        self._psbmpc_targetshipparams = config.layer1.psbmpc.targetshipparams.to_dict()
+
+        self._obstacle_predictor = psbmpcI.ObstaclePredictor(
+            self._psbmpc_params, 
+            self._psbmpc_targetshipparams["r_ct"], 
+            self._psbmpc_targetshipparams["path_prediction_shape"],
+            self._psbmpc_targetshipparams["chi_offsets"]
+        )
 
         # IM currently only works for 2 ships (1 ownship + 1 obstacle ship)
         self._ship_intentions = {}
@@ -652,7 +659,12 @@ class PSBMPCWrapper(ICOLAV):
                                 print(f"Pr_CCEM^{ship_id} set to {Pr_CCEM}")
                                 print(f"Pr_W GW^{ship_id} set to {Pr_WGW}")
                                 
-            self._obstacles = self._obstacle_predictor(self._obstacles, os_PSBMPC, self._psbmpc_params)
+            self._obstacles = self._obstacle_predictor(
+                self._obstacles, 
+                os_PSBMPC, 
+                self._psbmpc_params, 
+                psbmpcI.PathPredictionShape.SMOOTH,
+            )
 
             for ship_id in mmsi_list:
                 if (ship_id != os_id) and (ship_id in self._ship_intentions):
@@ -718,7 +730,7 @@ class PSBMPCWrapper(ICOLAV):
             self._course_os_best = os_psbmpc_pred.chi_opt
             self._trajectory_os_best = os_psbmpc_pred.predicted_trajectory
             self._t_run_psbmpc_last = t
-            print(f"PSBMPC course output: {np.rad2deg(course_ref + self._course_os_best)} | Best course offset: {np.rad2deg(self._course_os_best)} | Nominal course ref: {np.rad2deg(course_ref)}")
+            print(f"PSBMPC course output: {round(np.rad2deg(course_ref + self._course_os_best), 4)} | Best course offset: {np.rad2deg(self._course_os_best)} | Nominal course ref: {round(np.rad2deg(course_ref), 4)}")
             print(f"PSBMPC speed output: {speed_ref * self._speed_os_best} | Best speed offset: {self._speed_os_best} | Nominal speed ref: {speed_ref}")
         references[2, 0] += self._course_os_best
         references[3, 0] = speed_ref * self._speed_os_best

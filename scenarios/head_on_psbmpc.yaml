@@ -63,6 +63,10 @@ ship_list:
             LOS_K_i: 0.0
             active_waypoint: 0
             path_prediction_shape: "SMOOTH" # SMOOTH or LINEAR
+          psbmpc_targetship_params:
+            r_ct : 20
+            path_prediction_shape: "SMOOTH" # SMOOTH or LINEAR
+            chi_offsets: [-60, -30, 0, 30, 60] # Number of elements in chi_offsets must equal n_do_ps in psbmpc_params
           psbmpc_cpe_params:
             CPE_method: "CE" # CE or MCSKF4D
             n_CE: 500

@@ -7,7 +7,8 @@ import colav_simulator.core.ship as ship
 import colav_simulator.core.stochasticity as stochasticity
 import colav_simulator.core.tracking.trackers as trackers
 import numpy as np
-from colav_simulator.scenario_management import ScenarioGenerator
+from colav_simulator.scenario_generator import ScenarioGenerator, Config
+from colav_simulator.behavior_generator import BehaviorGenerationMethod, BehaviorGenerator
 from matplotlib import pyplot as plt
 from colav_simulator.simulator import Simulator
 import colav_simulator.common.paths as dp
@@ -21,7 +22,10 @@ if __name__ == "__main__":
 
     scenario_file = dp.scenarios / "VIMMJIPDA.yaml"
     # scenario_file = dp.scenarios / "VIMMJIPDA_Multi_Target.yaml"
-    scenario_generator = ScenarioGenerator()
+    sg_config = Config()
+    sg_config.behavior_generator.ownship_method = BehaviorGenerationMethod.ConstantSpeedAndCourse
+    sg_config.behavior_generator.target_ship_method = BehaviorGenerationMethod.ConstantSpeedAndCourse
+    scenario_generator = ScenarioGenerator(sg_config)
     scenario_data = scenario_generator.generate(config_file=scenario_file)
     simulator = Simulator()
     simulator.toggle_liveplot_visibility(True)

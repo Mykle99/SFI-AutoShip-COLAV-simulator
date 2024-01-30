@@ -1,9 +1,9 @@
 save_scenario_results: True
 verbose: True
 visualizer:
-  show_liveplot: False
+  show_liveplot: True
   show_colav_results_live: True
-  show_measurements: False
+  show_measurements: True
   show_liveplot_tracks: True
   show_waypoints: True
   zoom_in_liveplot_on_ownship: False

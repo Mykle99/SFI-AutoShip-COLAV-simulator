@@ -168,7 +168,7 @@ class Simulator:
                 episode_config = episode_data["config"]
                 scenario_episode_file = episode_config.filename
 
-                self.initialize_scenario_episode(ship_list, episode_config, scenario_enc, episode_disturbance, ownship_colav_system)
+                self.initialize_scenario_episode(ship_list, episode_config, scenario_enc, episode_disturbance, colav_systems)
                 np.random.seed(ep) # This sets the seed for measurement noise so that trackers can be compared
 
                 if self._config.verbose:

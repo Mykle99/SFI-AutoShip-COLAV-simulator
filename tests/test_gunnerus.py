@@ -1,3 +1,4 @@
+import colav_simulator.common.map_functions as mapf
 import colav_simulator.common.math_functions as mf
 import colav_simulator.core.controllers as controllers
 import colav_simulator.core.guidances as guidances
@@ -15,10 +16,8 @@ fig_size = [25, 13]  # figure1 size in cm
 dpi_value = 150  # figure dpi value
 
 if __name__ == "__main__":
-    n_wps = 8
-
     utm_zone = 33
-    map_size = [5000.0, 5000.0]
+    map_size = [2000.0, 2000.0]
     map_origin_enu = [-35544.0, 6579000.0]
     map_data_files = ["Rogaland_utm33.gdb"]
 
@@ -26,6 +25,7 @@ if __name__ == "__main__":
     scenario_generator = ScenarioGenerator(
         init_enc=True, new_data=True, utm_zone=utm_zone, size=map_size, origin=map_origin_enu, files=map_data_files
     )
+
     origin = scenario_generator.enc_origin
 
     model = models.RVGunnerus()
@@ -45,7 +45,7 @@ if __name__ == "__main__":
     tracker = trackers.KF(sensor_list=sensor_list)
     guidance_params = guidances.LOSGuidanceParams(
         K_p=0.02,
-        K_i=0.0001,
+        K_i=0.0003,
         R_a=80.0,
         max_cross_track_error_int=1000.0,
         cross_track_error_int_threshold=30.0,
@@ -93,12 +93,6 @@ if __name__ == "__main__":
     )  # = scenario_generator.generate_random_speed_plan(U=5.0, n_wps=waypoints.shape[1])
     ownship.set_nominal_plan(waypoints=waypoints, speed_plan=speed_plan)
 
-    disturbance_config = stochasticity.Config()
-    disturbance = stochasticity.Disturbance(disturbance_config)
-    # disturbance._currents = None
-    # disturbance._wind = None
-    horizon = 700.0
-    dt = 0.1
     n_x, n_u = model.dims
     n_r = 9
     n_samples = round(horizon / dt)
@@ -117,6 +111,7 @@ if __name__ == "__main__":
             disturbances[2, k] = disturbance_data.currents["speed"]
             disturbances[3, k] = disturbance_data.currents["direction"]
         ownship.plan(time[k], dt, [], None, w=disturbance_data)
+        # ownship.set_references(np.array([0.0, 0.0, csog_state[3] + np.pi, speed_plan[0], 0.0, 0.0, 0.0, 0.0, 0.0]))
         trajectory[:, k], tau[:, k], refs[:, k] = ownship.forward(dt, w=disturbance_data)
         disturbance.update(time[k], dt)
 
@@ -131,14 +126,21 @@ if __name__ == "__main__":
     #         wind_arrow_start[1] + 100.0 * initial_wind_speed * np.cos(initial_wind_direction),
     #     )
     #     scenario_generator.enc.draw_arrow(wind_arrow_start, wind_arrow_end, "white", width=15, fill=False, head_size=60, thickness=2)
-    gcf = plt.gcf()
-    gca = gcf.axes[0]
-    gca.plot(waypoints[1, :], waypoints[0, :], "rx", label="Waypoints")
-    gca.plot(trajectory[1, :], trajectory[0, :], "k", label="Trajectory")
-    gca.set_xlabel("East (m)")
-    gca.set_ylabel("North (m)")
-    gca.legend()
-    gca.grid()
+    mapf.plot_waypoints(
+        waypoints,
+        scenario_generator.enc,
+        "orange",
+        point_buffer=5.0,
+        disk_buffer=10.0,
+        hole_buffer=5.0,
+        alpha=0.6,
+    )
+    mapf.plot_trajectory(trajectory, scenario_generator.enc, "black")
+    for k in range(0, n_samples, 10):
+        ship_poly = mapf.create_ship_polygon(
+            trajectory[0, k], trajectory[1, k], trajectory[2, k], ownship.length, ownship.width
+        )
+        scenario_generator.enc.draw_polygon(ship_poly, "magenta", fill=True)
 
     # States
     fig = plt.figure(figsize=(mf.cm2inch(fig_size[0]), mf.cm2inch(fig_size[1])), dpi=dpi_value)
@@ -152,6 +154,7 @@ if __name__ == "__main__":
     axs["xy"].plot(trajectory[1, :] - origin[1], trajectory[0, :] - origin[0], "k", label="Trajectory")
     axs["xy"].set_xlabel("East (m)")
     axs["xy"].set_ylabel("North (m)")
+    axs["xy"].set_aspect("equal")
     axs["xy"].grid()
     axs["xy"].legend()
 
@@ -185,10 +188,10 @@ if __name__ == "__main__":
     axs["r"].grid()
     axs["r"].legend()
 
-    U_d = np.sqrt(refs[3] ** 2 + refs[4] ** 2)
-    U = np.sqrt(trajectory[3, :] ** 2 + trajectory[4, :] ** 2)
-    axs["U"].plot(time, U_d, "r--", label="Speed reference")
-    axs["U"].plot(time, U, "k", label="Speed")
+    u_d = refs[3, :]
+    u = trajectory[3, :]
+    axs["U"].plot(time, u_d, "r--", label="Speed reference")
+    axs["U"].plot(time, u, "k", label="Speed")
     axs["U"].set_xlabel("Time (s)")
     axs["U"].set_ylabel("Speed (m/s)")
     axs["U"].grid()

@@ -15,11 +15,53 @@ from zoneinfo import ZoneInfo
 
 import colav_simulator.common.map_functions as mapf
 import colav_simulator.common.math_functions as mf
+import colav_simulator.common.vessel_data as vd
 import numpy as np
 import pandas as pd
 import shapely.geometry as geometry
-from colav_evaluation_tool.vessel import VesselData, compute_total_dist_travelled
+from scipy.interpolate import interp1d
 from scipy.stats import chi2
+
+
+def get_ship_ais_df_list_from_ais_df(df: pd.DataFrame) -> list:
+    """
+     Returns a list of DataFrames, where each DataFrame contains AIS_data for a ship
+    :param df: DataFrame containing AIS_data
+    :type df: pandas DataFrame
+    :return: List of mmsi [DF_mmsi_1, DF_mmsi_2,..., DF_mmsi_n]
+    """
+    mmsi_list = df.mmsi.unique().tolist()
+    mmsi_df_list = [df[df.mmsi == mmsi].reset_index(drop=True) for mmsi in mmsi_list]
+    return mmsi_df_list
+
+
+def create_arc_length_spline(x: list, y: list) -> Tuple[interp1d, interp1d, np.ndarray]:
+    """Creates a spline for the arc length of the input x and y coordinates.
+
+    Args:
+        - x (list): List of x coordinates.
+        - y (list): List of y coordinates.
+
+    Returns:
+        Tuple[interp1d, interp1d, np.ndarray]: Tuple of arc length splines for x and y coordinates.
+    """
+    # Interpolate the data to get more points => higher accuracy in the arc length spline
+    n_points = len(x)
+    y_interp = interp1d(np.arange(n_points), y, kind="linear")
+    x_interp = interp1d(np.arange(n_points), x, kind="linear")
+
+    n_expanded_points = 500
+    y_expanded = list(y_interp(np.linspace(0, n_points - 1, n_expanded_points)))
+    x_expanded = list(x_interp(np.linspace(0, n_points - 1, n_expanded_points)))
+    arc_length = [0.0]
+    for i in range(1, n_expanded_points):
+        pi = np.array([x_expanded[i - 1], y_expanded[i - 1]])
+        pj = np.array([x_expanded[i], y_expanded[i]])
+        arc_length.append(np.linalg.norm(pi - pj))
+    arc_length = np.cumsum(arc_length)
+    y_interp_arc_length = interp1d(arc_length, y_expanded, kind="linear")
+    x_interp_arc_length = interp1d(arc_length, x_expanded, kind="linear")
+    return x_interp_arc_length, y_interp_arc_length, arc_length
 
 
 def linestring_to_ndarray(line: geometry.LineString) -> np.ndarray:
@@ -48,7 +90,12 @@ def ndarray_to_linestring(array: np.ndarray) -> geometry.LineString:
 
 
 def check_if_vessel_is_passed_by(
-    p_os: np.ndarray, v_os: np.ndarray, p_do: np.ndarray, v_do: np.ndarray, threshold_angle: float = 100.0, threshold_distance: float = 50.0
+    p_os: np.ndarray,
+    v_os: np.ndarray,
+    p_do: np.ndarray,
+    v_do: np.ndarray,
+    threshold_angle: float = 100.0,
+    threshold_distance: float = 50.0,
 ) -> bool:
     """Checks if a vessel is passed by another vessel.
 
@@ -78,11 +125,55 @@ def check_if_vessel_is_passed_by(
     return vessel_is_passed
 
 
-def sample_from_triangle_region(p1: np.ndarray, p2: np.ndarray, p3: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+def compute_triangulation_weights(cdt: list) -> list:
+    """Computes the weights of the triangulation.
+
+    Args:
+        cdt (list): Constrained Delaunay triangulation.
+
+    Returns:
+        list: List of weights for each triangle.
+    """
+    weights = []
+    for triangle in cdt:
+        assert (
+            isinstance(triangle, geometry.Polygon) and len(triangle.exterior.coords) >= 4
+        ), "The triangulation must be a polygon and triangle."
+        weights.append(triangle.area)
+    total_area = np.sum(np.array(weights))
+    normalized_weights_arr = np.array(weights) / total_area
+    return normalized_weights_arr.tolist()
+
+
+def sample_from_triangulation(rng: np.random.Generator, triangulation: list, triangulation_weights: list) -> np.ndarray:
+    """Samples a point from a triangulation.
+
+    Args:
+        rng (np.random.Generator): Numpy random generator.
+        triangulation (list): List of triangles (polygons).
+        triangulation_weights (list): List of weights for each triangle.
+
+    Returns:
+        np.ndarray: Sampled point.
+    """
+    random_triangle = rng.choice(triangulation, p=triangulation_weights)
+    assert (
+        isinstance(random_triangle, geometry.Polygon) and len(random_triangle.exterior.coords) >= 4
+    ), "The triangulation must be a polygon and triangle."
+    x, y = random_triangle.exterior.coords.xy
+    p1 = np.array([x[0], y[0]])
+    p2 = np.array([x[1], y[1]])
+    p3 = np.array([x[2], y[2]])
+    random_point = sample_from_triangle_region(rng, p1, p2, p3)
+    return random_point
+
+
+def sample_from_triangle_region(rng: np.random.Generator, p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) -> np.ndarray:
     """Samples a point from the triangle region defined by p1, p2 and p3.
     Ref: Osada et. al. 2002:
 
     Args:
+        rng (np.random.Generator): Numpy random generator.
         p1 (np.ndarray): Vertex 1 coordinate.
         p2 (np.ndarray): Vertex 2 coordinate.
         p3 (np.ndarray): Vertex 3 coordinate.
@@ -96,7 +187,101 @@ def sample_from_triangle_region(p1: np.ndarray, p2: np.ndarray, p3: np.ndarray, 
     return p
 
 
-def compute_vessel_pair_cpa(p1: np.ndarray, v1: np.ndarray, p2: np.ndarray, v2: np.ndarray) -> Tuple[float, float, np.ndarray]:
+def compute_path_length(path: np.ndarray) -> float:
+    """Computes the length of a path.
+
+    Args:
+        path (np.ndarray): Path coordinates 2 x n_samples.
+
+    Returns:
+        float: Length of the path.
+    """
+    assert path.shape[0] == 2, "Path must be 2 x n_samples"
+    assert path.shape[1] > 1, "Path must have at least 2 samples"
+    length = 0.0
+    for k in range(1, path.shape[1]):
+        length += np.linalg.norm(path[:, k] - path[:, k - 1])
+    return length
+
+
+def parse_rrt_solution(soln: dict) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Parses the RRT solution.
+
+    Args:
+        soln (dict): Solution dictionary.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: Tuple of waypoints, trajectory, inputs and times from the solution.
+    """
+    times = np.array(soln["times"])
+    n_samples = len(times)
+    trajectory = np.zeros((6, n_samples))
+    n_inputs = len(soln["inputs"])
+    inputs = np.zeros((3, n_inputs))
+    n_wps = len(soln["waypoints"])
+    waypoints = np.zeros((3, n_wps))
+    if n_samples > 0:
+        for k in range(n_wps):
+            waypoints[:, k] = np.array(soln["waypoints"][k])
+        for k in range(n_samples):
+            trajectory[:, k] = np.array(soln["states"][k])
+        for k in range(n_inputs):
+            inputs[:, k] = np.array(soln["inputs"][k])
+    if n_wps == 1:
+        waypoints = np.array([waypoints[:, 0], waypoints[:, 0]]).T
+    return waypoints, trajectory, inputs, times
+
+
+def sample_from_waypoint_corridor(rng: np.random.Generator, waypoints: np.ndarray, corridor_width: float) -> np.ndarray:
+    """Samples a point from a random segment of the waypoint corridor.
+
+    Args:
+        rng (np.random.Generator): Numpy random generator.
+        waypoints (np.ndarray): Waypoint data (2 x n_waypoints).
+        corridor_width (float): Width of the corridor.
+
+    Returns:
+        np.ndarray: Sampled point.
+    """
+    assert waypoints.shape[0] == 2, "Waypoints must be 2 x n_waypoints"
+    n_wps = waypoints.shape[1]
+    assert n_wps > 1, "Must have at least 2 waypoints"
+    segment_idx = rng.integers(0, n_wps - 1)
+    segment_length = np.linalg.norm(waypoints[:, segment_idx + 1] - waypoints[:, segment_idx])
+    x = rng.uniform(0, segment_length)
+    y = rng.uniform(-corridor_width / 2.0, corridor_width / 2.0)
+    alpha = np.arctan2(
+        waypoints[1, segment_idx + 1] - waypoints[1, segment_idx],
+        waypoints[0, segment_idx + 1] - waypoints[0, segment_idx],
+    )
+    return mf.Rmtrx2D(alpha) @ np.array([x, y]) + waypoints[:, segment_idx]
+
+
+def check_if_situation_is_risky_enough(
+    os_csog_state: np.ndarray, do_csog_state: np.ndarray, t_cpa_threshold: float, d_cpa_threshold: float
+) -> bool:
+    """Checks if a vessel-vessel situation is risky enough to be considered a COLAV situation.
+
+    Args:
+        os_csog_state (np.ndarray): Ownship CSOG state on the form [x, y, U, chi]^T.
+        do_csog_state (np.ndarray): Dynamic obstacle CSOG state on the form [x, y, U, chi]^T.
+        t_cpa_threshold (float): Threshold for the CPA time.
+        d_cpa_threshold (float): Threshold for the CPA distance.
+
+    Returns:
+        bool: Whether the situation is risky enough or not.
+    """
+    p_os = os_csog_state[0:2]
+    v_os = np.array([os_csog_state[2] * np.cos(os_csog_state[3]), os_csog_state[2] * np.sin(os_csog_state[3])])
+    p_do = do_csog_state[0:2]
+    v_do = np.array([do_csog_state[2] * np.cos(do_csog_state[3]), do_csog_state[2] * np.sin(do_csog_state[3])])
+    t_cpa, d_cpa, d_cpa_vec = compute_vessel_pair_cpa(p_os, v_os, p_do, v_do)
+    return t_cpa < t_cpa_threshold and d_cpa < d_cpa_threshold
+
+
+def compute_vessel_pair_cpa(
+    p1: np.ndarray, v1: np.ndarray, p2: np.ndarray, v2: np.ndarray
+) -> Tuple[float, float, np.ndarray]:
     """Computes the closest point of approach (CPA) between two vessel when assumed to travel with constant velocity.
 
     Args:
@@ -135,7 +320,7 @@ def convert_simulation_data_to_vessel_data(sim_data: pd.DataFrame, ship_info: di
     vessels = []
     identifier = 0
     for name, ship_i_info in ship_info.items():
-        vessel = VesselData(
+        vessel = vd.VesselData(
             id=identifier,
             name=name,
             mmsi=ship_i_info["mmsi"],
@@ -151,11 +336,14 @@ def convert_simulation_data_to_vessel_data(sim_data: pd.DataFrame, ship_info: di
         vessel.xy = np.zeros((2, len(X[0, :])))
         vessel.xy[0, :] = X[1, :]  # ENU frame is used in the evaluator
         vessel.xy[1, :] = X[0, :]
-        vessel.sog = X[2, :]
-        vessel.cog = X[3, :]
+        vessel.sog = X[3, :]
+        vessel.cog = X[2, :]
 
         vessel.latlon = np.zeros(vessel.xy.shape) * np.nan
-        (vessel.latlon[0, vessel.first_valid_idx : vessel.last_valid_idx + 1], vessel.latlon[1, vessel.first_valid_idx : vessel.last_valid_idx + 1],) = mapf.local2latlon(
+        (
+            vessel.latlon[0, vessel.first_valid_idx : vessel.last_valid_idx + 1],
+            vessel.latlon[1, vessel.first_valid_idx : vessel.last_valid_idx + 1],
+        ) = mapf.local2latlon(
             vessel.xy[0, vessel.first_valid_idx : vessel.last_valid_idx + 1],
             vessel.xy[1, vessel.first_valid_idx : vessel.last_valid_idx + 1],
             utm_zone,
@@ -164,14 +352,24 @@ def convert_simulation_data_to_vessel_data(sim_data: pd.DataFrame, ship_info: di
         vessel.forward_heading_estimate = np.zeros(n_msgs) * np.nan
         vessel.backward_heading_estimate = np.zeros(n_msgs) * np.nan
         for k in range(vessel.first_valid_idx, vessel.last_valid_idx):
-            vessel.forward_heading_estimate[k] = np.arctan2(vessel.xy[0, k + 1] - vessel.xy[0, k], vessel.xy[1, k + 1] - vessel.xy[1, k])
-        vessel.forward_heading_estimate[vessel.last_valid_idx] = vessel.forward_heading_estimate[vessel.last_valid_idx - 1]
+            vessel.forward_heading_estimate[k] = np.arctan2(
+                vessel.xy[0, k + 1] - vessel.xy[0, k], vessel.xy[1, k + 1] - vessel.xy[1, k]
+            )
+        vessel.forward_heading_estimate[vessel.last_valid_idx] = vessel.forward_heading_estimate[
+            vessel.last_valid_idx - 1
+        ]
 
         for k in range(vessel.first_valid_idx + 1, vessel.last_valid_idx):
-            vessel.backward_heading_estimate[k] = np.arctan2(vessel.xy[0, k] - vessel.xy[0, k - 1], vessel.xy[1, k] - vessel.xy[1, k - 1])
-        vessel.backward_heading_estimate[vessel.first_valid_idx] = vessel.forward_heading_estimate[vessel.first_valid_idx]
+            vessel.backward_heading_estimate[k] = np.arctan2(
+                vessel.xy[0, k] - vessel.xy[0, k - 1], vessel.xy[1, k] - vessel.xy[1, k - 1]
+            )
+        vessel.backward_heading_estimate[vessel.first_valid_idx] = vessel.forward_heading_estimate[
+            vessel.first_valid_idx
+        ]
 
-        vessel.travel_dist = compute_total_dist_travelled(vessel.xy[:, vessel.first_valid_idx : vessel.last_valid_idx + 1])
+        vessel.travel_dist = vd.compute_total_dist_travelled(
+            vessel.xy[:, vessel.first_valid_idx : vessel.last_valid_idx + 1]
+        )
 
         # print(f"Vessel {identifier} travelled a distance of {vessel.travel_dist} m")
         # print(f"Vessel status: {vessel.status}")
@@ -338,7 +536,9 @@ def inside_bbox(point: np.ndarray, bbox: Tuple[float, float, float, float]) -> b
     return point[0] >= bbox[0] and point[0] <= bbox[2] and point[1] >= bbox[1] and point[1] <= bbox[3]
 
 
-def clip_waypoint_segment_to_bbox(segment: np.ndarray, bbox: Tuple[float, float, float, float]) -> Tuple[np.ndarray, bool]:
+def clip_waypoint_segment_to_bbox(
+    segment: np.ndarray, bbox: Tuple[float, float, float, float]
+) -> Tuple[np.ndarray, bool]:
     """Clips a waypoint segment to within a bounding box.
 
     Args:
@@ -498,7 +698,7 @@ def get_relevant_do_states(input_list: list, idx: int) -> list:
     , with all elements of input_list except the element <idx>, if this index is in the tuple list.
 
     Args:
-        input_list (list): List of (do_idx, do_state) to get elements from
+        input_list (list): List of (do_idx, do_state, do_length, do_width) to get elements from
         idx (int): Index of element to exclude
 
     Returns:
@@ -510,6 +710,24 @@ def get_relevant_do_states(input_list: list, idx: int) -> list:
             output_list.append((do_idx, do_state, do_length, do_width))
 
     return output_list
+
+
+def extract_do_states_from_ship_list(t: float, ship_list: list) -> list:
+    """Extracts the dynamic obstacle states from the ship list.
+
+    Args:
+        t (float): Current time
+        ship_list (list): List of Ship objects
+
+    Returns:
+        list: List of dynamic obstacle states on the form (do_idx, do_state, do_length, do_width)
+    """
+    true_do_states = []
+    for i, ship_obj in enumerate(ship_list):
+        if ship_obj.t_start <= t:
+            vxvy_state = convert_state_to_vxvy_state(ship_obj.csog_state)
+            true_do_states.append((i, vxvy_state, ship_obj.length, ship_obj.width))
+    return true_do_states
 
 
 def convert_state_to_vxvy_state(xs: np.ndarray) -> np.ndarray:
@@ -557,6 +775,29 @@ def convert_vxvy_state_to_sog_cog_state(xs: np.ndarray) -> np.ndarray:
                 np.arctan2(xs[3, :], xs[2, :]),
             ]
         )
+
+
+def convert_3dof_state_to_sog_cog_state(xs: np.ndarray) -> np.ndarray:
+    """Converts from a state [x, y, psi, u, v, r]^T x N to [x, y, U, chi]^T x N.
+
+    Args:
+        xs (np.ndarray): State(s) to convert.
+
+    Returns:
+        np.ndarray: Converted state.
+    """
+    if xs.ndim == 1:
+        heading = xs[2]
+        crab_angle = 0.0  # np.arctan2(xs[4], xs[3])
+        cog = heading + crab_angle
+        speed = np.sqrt(xs[3] ** 2 + xs[4] ** 2)
+        return np.array([xs[0], xs[1], speed, cog])
+    else:
+        heading = xs[2, :]
+        crab_angle = np.zeros(len(xs[2, :]))  # np.arctan2(xs[4, :], xs[3, :])
+        cog = heading + crab_angle
+        speed = np.sqrt(np.multiply(xs[3, :], xs[3, :]) + np.multiply(xs[4, :], xs[4, :]))
+        return np.array([xs[0, :], xs[1, :], speed, cog])
 
 
 def index_of_first_and_last_non_nan(input_list: list | np.ndarray) -> Tuple[int, int]:
@@ -641,7 +882,9 @@ def utc_to_local(utc_dt: datetime) -> datetime:
     return utc_dt.replace(tzinfo=ZoneInfo("localtime"))
 
 
-def write_coast_distances_to_file(dist_port: float, dist_front: float, dist_starboard: float, safety_radius: float, ship_obj: Any, filepath: str) -> None:
+def write_coast_distances_to_file(
+    dist_port: float, dist_front: float, dist_starboard: float, safety_radius: float, ship_obj: Any, filepath: str
+) -> None:
     """
     Writes the distance to coast data on-line to the AIS case file
 
@@ -662,7 +905,11 @@ def write_coast_distances_to_file(dist_port: float, dist_front: float, dist_star
 
     columns = ["dcoast_port", "dcoast_front", "dcoast_starboard"]
 
-    if "dcoast_port" not in old_data.columns or "dcoast_front" not in old_data.columns or "dcoast_starboard" not in old_data.columns:
+    if (
+        "dcoast_port" not in old_data.columns
+        or "dcoast_front" not in old_data.columns
+        or "dcoast_starboard" not in old_data.columns
+    ):
         old_data[columns[0]] = np.zeros(old_data.index.max() + 1)
         old_data[columns[1]] = np.zeros(old_data.index.max() + 1)
         old_data[columns[2]] = np.zeros(old_data.index.max() + 1)

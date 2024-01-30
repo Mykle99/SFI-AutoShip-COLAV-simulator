@@ -18,7 +18,6 @@ plt.rcParams["animation.ffmpeg_path"] = "/usr/bin/ffmpeg"
 
 
 def save_frames_as_gif(frame_list: list, filename: Path) -> None:
-
     # Mess with this to change frame size
     fig = plt.figure(figsize=(frame_list[0].shape[1] / 72.0, frame_list[0].shape[0] / 72.0), dpi=72)
 
@@ -33,16 +32,29 @@ def save_frames_as_gif(frame_list: list, filename: Path) -> None:
         patch.set_data(frame_list[i])
         return (patch,)
 
-    anim = animation.FuncAnimation(fig=fig, func=animate, init_func=init, blit=True, frames=len(frame_list), interval=50, repeat=True)
-    anim.save(filename=filename.as_posix(), writer=animation.PillowWriter(fps=20), progress_callback=lambda i, n: print(f"Saving frame {i} of {n}"))
+    anim = animation.FuncAnimation(
+        fig=fig, func=animate, init_func=init, blit=True, frames=len(frame_list), interval=50, repeat=True
+    )
+    anim.save(
+        filename=filename.as_posix(),
+        writer=animation.PillowWriter(fps=20),
+        progress_callback=lambda i, n: print(f"Saving frame {i} of {n}"),
+    )
 
 
 if __name__ == "__main__":
     config_file = dp.scenarios / "rl_scenario.yaml"
 
     env_id = "COLAVEnvironment-v0"
-    env_config = {"scenario_config_file": config_file, "render_mode": "rgb_array", "render_update_interval": 0.2, "test_mode": True}
+    env_config = {
+        "scenario_config": config_file,
+        "reload_map": True,
+        "render_mode": "rgb_array",
+        "render_update_interval": 1.0,
+        "test_mode": False,
+    }
     env = gym.make(id=env_id, **env_config)
+
     record = True
     if record:
         video_path = dp.animation_output / "demo.mp4"
@@ -50,7 +62,7 @@ if __name__ == "__main__":
 
     env.reset(seed=1)
     frames = []
-    for i in range(250):
+    for i in range(500):
         obs, reward, terminated, truncated, info = env.step(np.array([-0.2, 0.0]))
 
         frames.append(env.render())

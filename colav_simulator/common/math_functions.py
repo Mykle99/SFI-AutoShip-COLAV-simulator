@@ -12,6 +12,29 @@ from typing import Tuple
 import numpy as np
 
 
+def cpa(p_A: np.ndarray, v_A: np.ndarray, p_B: np.ndarray, v_B: np.ndarray) -> Tuple[float, float]:
+    """Computes the closest point of approach (CPA) between two objects A and B.
+
+    Args:
+        p_A (np.ndarray): Position of object A.
+        v_A (np.ndarray): Velocity of object A.
+        p_B (np.ndarray): Position of object B.
+        v_B (np.ndarray): Velocity of object B.
+
+    Returns:
+        Tuple[float, float]: Tuple containing the time and distance to CPA.
+    """
+    p_AB = p_B - p_A
+    v_AB = v_B - v_A
+    v_AB_norm = np.linalg.norm(v_AB)
+    if v_AB_norm < 0.000001:
+        return np.inf, np.inf
+    else:
+        t_cpa = float(-np.dot(p_AB, v_AB) / (v_AB_norm * v_AB_norm))
+        d_cpa = float(np.linalg.norm(p_AB + t_cpa * v_AB))
+        return t_cpa, d_cpa
+
+
 def linear_map(v: float, x: Tuple[float, float], y: Tuple[float, float]) -> float:
     """Linearly maps v from x to y
 
@@ -71,6 +94,23 @@ def wrap_angle_to_02pi(angle: float | np.ndarray) -> float | np.ndarray:
         return wrap_min_max(angle, np.zeros(angle.size), 2 * np.pi * np.ones(angle.size))
     else:
         return wrap_min_max(angle, 0, 2 * np.pi)
+
+
+def wrap_angle_diff_to_02pi(a_1: float | np.ndarray, a_2: float | np.ndarray) -> float | np.ndarray:
+    """Wraps angle difference a_1 - a_2 to within [0, 2pi)
+
+    Args:
+        a_1 (float or np.ndarray): Angle in radians
+        a_2 (float or np.ndarray): Angle in radians
+
+    Returns:
+        float or np.ndarray: Wrapped angle difference
+    """
+    diff = wrap_angle_to_02pi(a_1) - wrap_angle_to_02pi(a_2)
+    if isinstance(diff, np.ndarray):
+        return wrap_min_max(diff, np.zeros(diff.size), 2 * np.pi * np.ones(diff.size))
+    else:
+        return wrap_min_max(diff, 0, 2 * np.pi)
 
 
 def wrap_angle_diff_to_pmpi(a_1: float | np.ndarray, a_2: float | np.ndarray) -> float | np.ndarray:

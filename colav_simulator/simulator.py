@@ -9,15 +9,14 @@
 """
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Optional, Tuple
 
 import colav_simulator.common.config_parsing as cp
 import colav_simulator.common.map_functions as mapf
 import colav_simulator.common.miscellaneous_helper_methods as mhm
 import colav_simulator.common.paths as dp
-import colav_simulator.core.colav.colav_interface as ci
 import colav_simulator.core.stochasticity as stochasticity
-import colav_simulator.scenario_management as sm
+import colav_simulator.scenario_config as sc
 import colav_simulator.viz.visualizer as viz
 import numpy as np
 import pandas as pd
@@ -56,7 +55,7 @@ class Simulator:
     ship_list: list
     disturbance: Optional[stochasticity.Disturbance]
     enc: senc.ENC
-    sconfig: sm.ScenarioConfig
+    sconfig: sc.ScenarioConfig
     recent_sensor_measurements: list
 
     t: float
@@ -99,10 +98,10 @@ class Simulator:
     def initialize_scenario_episode(
         self,
         ship_list: list,
-        sconfig: sm.ScenarioConfig,
+        sconfig: sc.ScenarioConfig,
         enc: senc.ENC,
         disturbance: Optional[stochasticity.Disturbance] = None,
-        ownship_colav_system: Optional[Any | ci.ICOLAV] = None,
+        colav_systems: Optional[list] = None,
     ) -> None:
         """Initializes the simulation through setting relevant internal state objects.
 
@@ -113,15 +112,18 @@ class Simulator:
             - sconfig (ScenarioConfig): Scenario episode configuration object.
             - enc (senc.ENC): ENC object relevant for the scenario.
             - disturbance (Optional[stochasticity.Disturbance]): Disturbance object relevant for the scenario. Defaults to None.
-            - ownship_colav_system (Optional[Any | ci.ICOLAV], optional): COLAV system to use for the ownship, overrides the existing one. Defaults to None.
+            - colav_systems (Optional[list]): List of tuples (ship ID, COLAV system) to use for the selected ships involved in the scenario, overrides the existing ones. Defaults to None.
         """
         self.ship_list = ship_list
         self.sconfig = sconfig
         self.enc = enc
         self.disturbance = disturbance
         self.ownship = ship_list[0]
-        if ownship_colav_system is not None:
-            self.ownship.set_colav_system(ownship_colav_system)
+        if colav_systems is not None:
+            for ship_id, colav_system in colav_systems:
+                for _, ship_obj in enumerate(self.ship_list):
+                    if ship_obj.id == ship_id:
+                        ship_obj.set_colav_system(colav_system)
 
         ownship_min_depth = mapf.find_minimum_depth(self.ownship.draft, self.enc)
         self.relevant_grounding_hazards = mapf.extract_relevant_grounding_hazards(ownship_min_depth, self.enc)
@@ -133,12 +135,12 @@ class Simulator:
         self.dt = sconfig.dt_sim
         self.recent_sensor_measurements: list = [None] * len(self.ship_list)
 
-    def run(self, scenario_data_list: list, ownship_colav_system: Optional[Any | ci.ICOLAV] = None) -> list:
+    def run(self, scenario_data_list: list, colav_systems: Optional[list] = None) -> list:
         """Runs through all specified scenarios with their number of episodes. If none are specified, the scenarios are generated from the config file and run through.
 
         Args:
             - scenario_data_list (list): Premade list of created/configured scenarios. Each entry contains a list of ship objects, scenario configuration objects and relevant ENC objects.
-            - ownship_colav_system (Optional[Any | ci.ICOLAV]): COLAV system to use for the ownship, overrides the existing one. Defaults to None.
+            - colav_systems (Optional[list]): List of tuples (ship ID, COLAV system) to use for the selected ships involved in the scenario, overrides the existing ones. Defaults to None.
 
         Returns:
             list: List of dictionaries containing the following simulation data for each scenario:
@@ -167,7 +169,7 @@ class Simulator:
                 scenario_episode_file = episode_config.filename
 
                 self.initialize_scenario_episode(
-                    ship_list, episode_config, scenario_enc, episode_disturbance, ownship_colav_system
+                    ship_list, episode_config, scenario_enc, episode_disturbance, colav_systems
                 )
 
                 if self._config.verbose:
@@ -285,11 +287,7 @@ class Simulator:
             dict: Dictionary containing the current time step simulation data for each ship and the disturbance data if applicable.
         """
         sim_data_dict = {}
-        true_do_states = []
-        for i, ship_obj in enumerate(self.ship_list):
-            if ship_obj.t_start <= self.t:
-                vxvy_state = mhm.convert_state_to_vxvy_state(ship_obj.csog_state)
-                true_do_states.append((i, vxvy_state, ship_obj.length, ship_obj.width))
+        true_do_states = mhm.extract_do_states_from_ship_list(self.t, self.ship_list)
 
         disturbance_data: Optional[stochasticity.DisturbanceData] = None
         if self.disturbance is not None:
@@ -353,17 +351,17 @@ class Simulator:
         Returns:
             bool: True if the own-ship has reached its goal, False otherwise.
         """
-        if self.ownship._goal_state.size > 0:
-            goal_state = self.ownship._goal_state
-        elif self.ownship._waypoints.size > 1:
-            goal_state = self.ownship._waypoints[:, -1]
+        if self.ownship.goal_csog_state.size > 0:
+            goal_state = self.ownship.goal_csog_state
+        elif self.ownship.waypoints.size > 1:
+            goal_state = self.ownship.waypoints[:, -1]
         else:
             raise ValueError(
                 "Either the goal pose must be provided, or a sufficient number of waypoints for the ship to follow!"
             )
         ownship_state = self.ownship.csog_state
         d2goal = np.linalg.norm(ownship_state[:2] - goal_state[:2])
-        return d2goal <= self.ownship.length / 2.0
+        return d2goal <= self.ownship.length
 
 
 def extract_valid_sensor_measurements(t: float, recent_sensor_measurements: list, sensor_measurements_i: list) -> list:

@@ -257,6 +257,28 @@ def sample_from_waypoint_corridor(rng: np.random.Generator, waypoints: np.ndarra
     return mf.Rmtrx2D(alpha) @ np.array([x, y]) + waypoints[:, segment_idx]
 
 
+def check_if_situation_is_risky_enough(
+    os_csog_state: np.ndarray, do_csog_state: np.ndarray, t_cpa_threshold: float, d_cpa_threshold: float
+) -> bool:
+    """Checks if a vessel-vessel situation is risky enough to be considered a COLAV situation.
+
+    Args:
+        os_csog_state (np.ndarray): Ownship CSOG state on the form [x, y, U, chi]^T.
+        do_csog_state (np.ndarray): Dynamic obstacle CSOG state on the form [x, y, U, chi]^T.
+        t_cpa_threshold (float): Threshold for the CPA time.
+        d_cpa_threshold (float): Threshold for the CPA distance.
+
+    Returns:
+        bool: Whether the situation is risky enough or not.
+    """
+    p_os = os_csog_state[0:2]
+    v_os = np.array([os_csog_state[2] * np.cos(os_csog_state[3]), os_csog_state[2] * np.sin(os_csog_state[3])])
+    p_do = do_csog_state[0:2]
+    v_do = np.array([do_csog_state[2] * np.cos(do_csog_state[3]), do_csog_state[2] * np.sin(do_csog_state[3])])
+    t_cpa, d_cpa, d_cpa_vec = compute_vessel_pair_cpa(p_os, v_os, p_do, v_do)
+    return t_cpa < t_cpa_threshold and d_cpa < d_cpa_threshold
+
+
 def compute_vessel_pair_cpa(
     p1: np.ndarray, v1: np.ndarray, p2: np.ndarray, v2: np.ndarray
 ) -> Tuple[float, float, np.ndarray]:
@@ -676,7 +698,7 @@ def get_relevant_do_states(input_list: list, idx: int) -> list:
     , with all elements of input_list except the element <idx>, if this index is in the tuple list.
 
     Args:
-        input_list (list): List of (do_idx, do_state) to get elements from
+        input_list (list): List of (do_idx, do_state, do_length, do_width) to get elements from
         idx (int): Index of element to exclude
 
     Returns:
@@ -688,6 +710,24 @@ def get_relevant_do_states(input_list: list, idx: int) -> list:
             output_list.append((do_idx, do_state, do_length, do_width))
 
     return output_list
+
+
+def extract_do_states_from_ship_list(t: float, ship_list: list) -> list:
+    """Extracts the dynamic obstacle states from the ship list.
+
+    Args:
+        t (float): Current time
+        ship_list (list): List of Ship objects
+
+    Returns:
+        list: List of dynamic obstacle states on the form (do_idx, do_state, do_length, do_width)
+    """
+    true_do_states = []
+    for i, ship_obj in enumerate(ship_list):
+        if ship_obj.t_start <= t:
+            vxvy_state = convert_state_to_vxvy_state(ship_obj.csog_state)
+            true_do_states.append((i, vxvy_state, ship_obj.length, ship_obj.width))
+    return true_do_states
 
 
 def convert_state_to_vxvy_state(xs: np.ndarray) -> np.ndarray:

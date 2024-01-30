@@ -10,8 +10,6 @@
 import copy
 import os
 import colav_simulator.common.miscellaneous_helper_methods as mhm
-
-os.environ["USE_PYGEOS"] = "0"
 import geopandas as gpd
 import geopy.distance
 import matplotlib.pyplot as plt
@@ -28,6 +26,8 @@ from osgeo import osr
 from seacharts.enc import ENC
 from shapely import affinity, strtree
 from shapely.geometry import GeometryCollection, LineString, MultiLineString, MultiPolygon, Point, Polygon
+
+os.environ["USE_PYGEOS"] = "0"
 
 
 def create_bbox_from_points(
@@ -1541,6 +1541,9 @@ def generate_random_goal_position(
     bbox: Optional[Tuple[float, float, float, float]] = None,
     min_distance_from_start: float = 100.0,
     max_distance_from_start: float = 10000.0,
+    sector_width: float = 60.0 * np.pi / 180.0,
+    min_distance_to_land: float = 50.0,
+    show_plots: bool = False,
 ) -> Tuple[float, float]:
     """Generates a random goal position for the ship, given its starting state (position, speed and heading).
 
@@ -1552,6 +1555,9 @@ def generate_random_goal_position(
         safe_sea_cdt_weights (list): List of weights for the safe sea region triangles, used to sample more efficiently.
         min_distance_from_start (float, optional): Minimum distance from the starting position. Defaults to 100.0.
         max_distance_from_start (float, optional): Maximum distance from the starting position. Defaults to 10000.0.
+        sector_width (float, optional): Width of the sector to sample from. Defaults to 60.0 * np.pi / 180.0.
+        min_distance_to_land (float, optional): Minimum distance to land. Defaults to 50.0.
+        show_plots (bool, optional): Option for visualization. Defaults to False.
 
     Returns:
         Tuple[float, float]: Goal position (northing, easting) for the ship.
@@ -1560,10 +1566,15 @@ def generate_random_goal_position(
         bbox = enc.bbox
     bbox_poly = bbox_to_polygon(bbox)
 
+    if max_distance_from_start <= min_distance_from_start:
+        print(
+            "WARNING: Max_distance_from_start must be larger than min_distance_from_start in goal position sampling. Setting to default values.."
+        )
+        max_distance_from_start = min_distance_from_start + 400.0
+
     northing = xs_start[0] + max_distance_from_start * np.cos(xs_start[3])
     easting = xs_start[1] + max_distance_from_start * np.sin(xs_start[3])
-    sector_width = 100.0 * np.pi / 180.0
-    sector_radius = max_distance_from_start
+    sector_radius = max(max_distance_from_start, min_distance_from_start)
     n_points = 100
     angle_range_port = np.linspace(-sector_width / 2.0 + xs_start[3], sector_width / 2.0 + xs_start[3], n_points)
     arc_port = [
@@ -1573,15 +1584,21 @@ def generate_random_goal_position(
     arc_line_port = LineString(arc_port)
     sector_poly = Polygon(list(arc_line_port.coords) + [(xs_start[1], xs_start[0])])
     sector_poly = sector_poly.intersection(bbox_poly)
-    # enc.draw_polygon(sector_poly, color="green", fill=True, alpha=0.5)
+    if show_plots:
+        enc.start_display()
+        enc.draw_polygon(sector_poly, color="green", fill=True, alpha=0.5)
     max_iter = 3000
     for _ in range(max_iter):
         p = mhm.sample_from_triangulation(rng, safe_sea_cdt, safe_sea_cdt_weights)
         easting, northing = p[0], p[1]
 
         dist2start = np.linalg.norm(np.array([northing, easting]) - np.array([xs_start[0], xs_start[1]]))
-        if (min_distance_from_start <= dist2start <= max_distance_from_start) and sector_poly.contains(
-            Point(easting, northing)
+        inside_sector = sector_poly.contains(Point(easting, northing))
+        dist2land = enc.land.geometry.distance(Point(easting, northing))
+        if (
+            (min_distance_from_start <= dist2start <= max_distance_from_start)
+            and inside_sector
+            and (dist2land >= min_distance_to_land)
         ):
             break
 
@@ -1633,7 +1650,7 @@ def generate_random_position_from_draft(
 
 
 def find_closest_collision_free_point_on_segment(
-    enc: ENC, p1: np.ndarray, p2: np.ndarray, draft: float = 5.0, hazards: Optional[list] = None, min_dist: float = 5.0
+    enc: ENC, p1: np.ndarray, p2: np.ndarray, draft: float = 5.0, hazards: Optional[list] = None, min_dist: float = 30.0
 ) -> np.ndarray:
     """Finds the closest collision free point on a line segment between two points.
 
@@ -1643,6 +1660,7 @@ def find_closest_collision_free_point_on_segment(
         p2 (np.ndarray): Second position.
         draft (float, optional): Vessel draft. Defaults to 5.0.
         hazards (Optional[list], optional): List of Multipolygon/Polygon objects that are relevant. Used if not none. Defaults to None.
+        min_dist (float, optional): Minimum distance to the hazard. Defaults to 5.0.
 
     Returns:
         np.ndarray: The closest collision free point on the line segment.
@@ -1727,6 +1745,104 @@ def compute_distance_vectors_to_grounding(
     return distance_vectors
 
 
+def get_distance_vectors_to_obstacles(
+    trajectory: np.ndarray,
+    do_list: list,
+    enc: ENC,
+    T: float,
+    dt: float,
+    min_vessel_depth: int = 5,
+    disable_bbox_check: bool = False,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Computes the distance vectors from the trajectory to the obstacles (dynamic and static).
+
+    Args:
+        trajectory (np.ndarray): Trajectory/position data (minimum 2 x n_samples).
+        do_list (list): List of dynamic obstacles on the form (ID, state, cov, length, width)
+        enc (senc.ENC): ENC object.
+        T (float): Prediction horizon.
+        dt (float): Time step.
+        min_vessel_depth (int, optional): Minimum vessel depth. Defaults to 5.
+        disable_bbox_check (bool, optional): Option for disabling the inside bounding box check for a position. Defaults to False.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: Tuple of distance vectors to dynamic obstacles and list of distance vectors to static obstacles.
+    """
+    distance_vectors_so = compute_distance_vectors_to_grounding(trajectory, min_vessel_depth, enc, disable_bbox_check)
+    distance_vectors_do = compute_distance_vectors_to_dynamic_obstacles(trajectory, do_list, T, dt)
+    return distance_vectors_do, distance_vectors_so
+
+
+def compute_minimum_distance_to_collision_and_grounding(
+    trajectory: np.ndarray,
+    do_list: list,
+    enc: ENC,
+    T: float,
+    dt: float,
+    min_vessel_depth: int = 5,
+    disable_bbox_check: bool = False,
+) -> Tuple[float, float, np.ndarray, np.ndarray]:
+    """Check if the trajectory collides with any of the obstacles (dynamic and static) over the prediction horizon.
+
+    Args:
+        trajectory (np.ndarray): Trajectory/position data (minimum 2 x n_samples) with EN coordinates
+        do_list (list): List of dynamic obstacles on the form (ID, state, cov, length, width) with EN coordinates
+        enc (ENC): ENC object.
+        T (float): Prediction horizon.
+        dt (float): Time step.
+        min_vessel_depth (int, optional): Minimum allowable vessel depth. Defaults to 5.
+        disable_bbox_check (bool, optional): Option for disabling the inside bounding box check for a position. Defaults to False.
+
+    Returns:
+        Tuple[float, float, np.ndarray, np.ndarray]: The minimum distances to collision and grounding, respectively. Also returns the corresponding distance vectors
+    """
+    distance_vectors_do, distance_vectors_so = get_distance_vectors_to_obstacles(
+        trajectory, do_list, enc, T, dt, min_vessel_depth, disable_bbox_check
+    )
+    min_dist_so = 1e12
+    if distance_vectors_so.size > 0:
+        min_dist_so = np.min(np.linalg.norm(distance_vectors_so, axis=0))
+    min_dist_do = 1e12
+    if distance_vectors_do.size > 0:
+        min_dist_do = np.min(np.linalg.norm(distance_vectors_do, axis=0))
+    return min_dist_do, min_dist_so, distance_vectors_do, distance_vectors_so
+
+
+def compute_distance_vectors_to_dynamic_obstacles(
+    trajectory: np.ndarray, do_list: list, T: float, dt: float
+) -> np.ndarray:
+    """Computes the (shortest) distance vectors to dynamic obstacles, assuming EN coordinates.
+
+    Args:
+        trajectory (np.ndarray): Trajectory/position data (minimum 2 x n_samples) with EN coordinates
+        do_list (list): List of dynamic obstacles on the form (ID, state, cov, length, width) with EN coordinates
+        T (float): Prediction horizon.
+        dt (float): Time step.
+
+    Returns:
+        np.ndarray: (Shortest) Distance vectors to dynamic obstacles.
+    """
+    if len(do_list) == 0:
+        return np.empty(0)
+    n_samples = trajectory.shape[1]
+    assert n_samples > 1, "Trajectory must have at least two samples"
+    assert n_samples == int(T / dt), "Must have n_samples = int(T / dt)"
+    distance_vectors = np.ndarray((2, n_samples))
+    for k in range(n_samples):
+        t = k * dt
+        p_k = trajectory[:, k]
+        min_do_dist_vec = np.array([1e6, 1e6])
+        min_do_dist = 1e12
+        for ID, do_state, do_cov, do_length, do_width in do_list:
+            p_do_k = do_state[:2] + np.array([do_state[2], do_state[3]]) * t
+            dist_vec = p_do_k - p_k
+            if np.linalg.norm(dist_vec) < min_do_dist:
+                min_do_dist = np.linalg.norm(dist_vec)
+                min_do_dist_vec = dist_vec
+        distance_vectors[:, k] = min_do_dist_vec
+    return distance_vectors
+
+
 def compute_distance_vector_to_bbox(
     x: float, y: float, bbox: Tuple[float, float, float, float], enc: Optional[ENC] = None
 ) -> np.ndarray:
@@ -1763,25 +1879,6 @@ def compute_distance_vector_to_bbox(
         #     enc.draw_circle((x, y), radius=0.5, color="blue")
 
     return distance_vector
-
-
-def min_distance_to_land(enc: ENC, y: float, x: float) -> float:
-    """Compute the minimum distance to land from a given point.
-
-    Args:
-        enc (ENC): Electronic Navigational Chart object
-        y (float): Ship's easting coordinate
-        x (float): Ship's northing coordinate
-
-    Returns:
-        float: Minimum distance to land in meters.
-    """
-    position = Point(y, x)
-    if enc.land.geometry.is_empty:
-        return 1e12
-
-    distance = enc.land.geometry.distance(position)
-    return distance
 
 
 def min_distance_to_hazards(hazards: list, x: float, y: float) -> float:
@@ -2129,6 +2226,7 @@ def constrained_delaunay_triangulation_custom(polygon: Polygon) -> list:
     Returns:
         list: List of triangles as shapely polygons.
     """
+    assert polygon.is_empty is False, "Polygon is empty"
     res_intersection_gdf = gpd.GeoDataFrame(geometry=[polygon])
     # Create ID to identify overlapping polygons
     res_intersection_gdf["TRI_ID"] = res_intersection_gdf.index
@@ -2230,6 +2328,53 @@ def plot_trajectory(
     )
 
 
+def plot_disturbance(
+    magnitude: float,
+    direction: float,
+    name: str,
+    enc: ENC,
+    color: str,
+    linewidth: Optional[float] = 2.5,
+    location: Optional[str] = "topright",
+    text_location_offset: Optional[Tuple[float, float]] = (0.0, 0.0),
+) -> plt.axes:
+    """Plots a disturbance vector on the ENC as a vector arrow inside a circle.
+    The name of the disturbance is plotted below the circle, with an offset given by text_location_offset.
+
+    Args:
+        magnitude (float): Magnitude of the disturbance / length of the disturbance vector
+        direction (float): Direction of the disturbance (defined in a north-east coordinate system)
+        name (str): Name of the disturbance
+        enc (ENC): Electronic Navigational Chart object
+        color (str): Color of the disturbance vector
+        linewidth (Optional[float]): Arrow thickness. Defaults to 1.0.
+        location (Optional[str]): Location of the disturbance vector in ["topleft", "topright", "bottomleft", "bottomright"]. Defaults to "topright".
+        text_location_offset (Optional[Tuple[float, float]]): Offset of the text location. Defaults to (0.0, 0.0).
+    """
+    enc.start_display()
+    xmin, ymin, xmax, ymax = enc.bbox  # x is east, y is north
+    if location == "topright":
+        origin = (xmax - 0.1 * (xmax - xmin), ymax - 0.1 * (ymax - ymin))
+    elif location == "topleft":
+        origin = (xmin + 0.1 * (xmax - xmin), ymax - 0.1 * (ymax - ymin))
+    elif location == "bottomright":
+        origin = (xmax - 0.1 * (xmax - xmin), ymin + 0.1 * (ymax - ymin))
+    elif location == "bottomleft":
+        origin = (xmin + 0.1 * (xmax - xmin), ymin + 0.1 * (ymax - ymin))
+
+    arrow_start = origin
+    arrow_end = (origin[0] + magnitude * np.sin(direction), origin[1] + magnitude * np.cos(direction))
+    text_location = (
+        origin[0] + text_location_offset[0] - 0.8 * magnitude,
+        origin[1] - 1.2 * magnitude + text_location_offset[1],
+    )
+
+    circle_handle = enc.draw_circle(origin, radius=magnitude, color="white", fill=True, alpha=0.4)
+    arrow_handle = enc.draw_arrow(arrow_start, arrow_end, color=color, width=linewidth, fill=True)
+    text_handle = enc.draw_text(name, text_location, color=color, size=10)
+    return [circle_handle, arrow_handle, text_handle]
+
+
 def plot_waypoints(
     waypoints: np.ndarray,
     enc: ENC,
@@ -2321,7 +2466,6 @@ def plot_rrt_tree(node_list: list, enc: ENC) -> None:
             if node["id"] == sub_node["id"] or sub_node["parent_id"] != node["id"]:
                 continue
             points = [(tt[1], tt[0]) for tt in sub_node["trajectory"]]
-            n_points = len(points)
             if len(points) > 1:
                 enc.draw_line(points, color="white", buffer=0.5, linewidth=0.5)
 

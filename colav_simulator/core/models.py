@@ -64,7 +64,7 @@ class KinematicCSOGParams:
     def to_dict(self):
         output_dict = asdict(self)
         output_dict["ship_vertices"] = self.ship_vertices.tolist()
-        output_dict["r_max"] = np.rad2deg(self.r_max)
+        output_dict["r_max"] = float(np.rad2deg(self.r_max))
         return output_dict
 
 
@@ -89,7 +89,7 @@ class TelemetronParams:
     Fy_limits: np.ndarray = field(default_factory=lambda: np.array([-645.0, 645.0]))  # Force limits in y
     r_max: float = float(np.deg2rad(15))
     U_min: float = 0.0
-    U_max: float = 15.0
+    U_max: float = 10.0
 
 
 @dataclass

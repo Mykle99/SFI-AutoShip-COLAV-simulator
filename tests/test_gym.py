@@ -47,13 +47,14 @@ if __name__ == "__main__":
 
     env_id = "COLAVEnvironment-v0"
     env_config = {
-        "scenario_config_file": config_file,
-        "reload_map": False,
+        "scenario_config": config_file,
+        "reload_map": True,
         "render_mode": "rgb_array",
         "render_update_interval": 1.0,
-        "test_mode": True,
+        "test_mode": False,
     }
     env = gym.make(id=env_id, **env_config)
+
     record = True
     if record:
         video_path = dp.animation_output / "demo.mp4"
@@ -61,7 +62,7 @@ if __name__ == "__main__":
 
     env.reset(seed=1)
     frames = []
-    for i in range(250):
+    for i in range(500):
         obs, reward, terminated, truncated, info = env.step(np.array([-0.2, 0.0]))
 
         frames.append(env.render())

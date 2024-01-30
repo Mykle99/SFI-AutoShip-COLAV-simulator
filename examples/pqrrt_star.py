@@ -21,7 +21,7 @@ import numpy as np
 import rrt_star_lib
 import seacharts.enc as senc
 from colav_simulator.behavior_generator import PQRRTStarParams
-from colav_simulator.scenario_management import ScenarioGenerator
+from colav_simulator.scenario_generator import ScenarioGenerator
 from colav_simulator.simulator import Simulator
 from shapely import strtree
 
@@ -243,5 +243,5 @@ if __name__ == "__main__":
     scenario_generator = ScenarioGenerator()
     scenario_data = scenario_generator.generate(config_file=scenario_file, new_load_of_map_data=True)
     simulator = Simulator()
-    output = simulator.run([scenario_data], ownship_colav_system=rrt)
+    output = simulator.run([scenario_data], colav_systems=[(0, rrt)])
     print("done")

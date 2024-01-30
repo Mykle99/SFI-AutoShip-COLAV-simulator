@@ -4,7 +4,7 @@ need to be built. See docs on the submodules.
 """
 
 from colav_simulator.simulator import Simulator
-from colav_simulator.scenario_management import ScenarioGenerator
+from colav_simulator.scenario_generator import ScenarioGenerator
 from colav_simulator.core.colav.psbmpc import PSBMPCInterface as psbmpcI 
 from colav_simulator.core.colav.im import IMInterface as imI
 from seacharts.enc import ENC
@@ -74,13 +74,15 @@ if __name__ == "__main__":
         # layer 3
         colav_config.layer3.los = guidance.LOSGuidanceParams()
 
+        # def the colav sys for the os
+        colav = colav_builder.construct_colav(config = colav_config)
+        colav_systems = [(0, colav)]
+
         # running the simulation
         scenario_generator = ScenarioGenerator()
         scenario_data_list = scenario_generator.generate_configured_scenarios()
         output = simulator.run(
-            scenario_data_list, ownship_colav_system = colav_builder.construct_colav(
-                config = colav_config
-            )
+            scenario_data_list, colav_systems = colav_systems
         )
         print("Simulation completed.")
 
@@ -305,13 +307,15 @@ if __name__ == "__main__":
         colav_builder = ci.COLAVBuilder()
         simulator = Simulator()
 
+        # def the colav sys for the os
+        colav = colav_builder.construct_colav(config = colav_config)
+        colav_systems = [(0, colav)]
+
         # running the simulation
         scenario_generator = ScenarioGenerator()
         scenario_data_list = scenario_generator.generate_configured_scenarios()
         output = simulator.run(
-            scenario_data_list, ownship_colav_system = colav_builder.construct_colav(
-                config = colav_config
-            )
+            scenario_data_list, colav_systems = colav_systems
         )
         print("Simulation completed.")
 
@@ -356,19 +360,21 @@ if __name__ == "__main__":
             colav_config.layer1.sbmpc_cpp.sbmpcparams,
             20, # r_ct
             psbmpcI.PathPredictionShape.SMOOTH,
-            colav_config.layer1.sbmpc_cpp.sbmpcparams.get_par_vector(1) # "get_chi_offsets()", example: np.array([-60, -30, 0, 30, 60])
+            np.array([-60, -30, 0, 30, 60])
         )
 
         # layer 2
         colav_config.layer2.los = guidance.LOSGuidanceParams()
 
+        # def the colav sys for the os
+        colav = colav_builder.construct_colav(config = colav_config)
+        colav_systems = [(0, colav)]
+
         # running the simulation
         scenario_generator = ScenarioGenerator()
         scenario_data_list = scenario_generator.generate_configured_scenarios()
         output = simulator.run(
-            scenario_data_list, ownship_colav_system = colav_builder.construct_colav(
-                config = colav_config
-            )
+            scenario_data_list, colav_systems = colav_systems
         )
         print("Simulation completed.")
 
@@ -465,13 +471,15 @@ if __name__ == "__main__":
         colav_builder = ci.COLAVBuilder()
         simulator = Simulator()
 
+        # def the colav sys for the os
+        colav = colav_builder.construct_colav(config = colav_config)
+        colav_systems = [(0, colav)]
+
         # running the simulation
         scenario_generator = ScenarioGenerator()
         scenario_data_list = scenario_generator.generate_configured_scenarios()
         output = simulator.run(
-            scenario_data_list, ownship_colav_system = colav_builder.construct_colav(
-                config = colav_config
-            )
+            scenario_data_list, colav_systems = colav_systems
         )
         print("Simulation completed.")
 
@@ -531,126 +539,126 @@ if __name__ == "__main__":
     # debugging #
     # # # # # # #
         
-    #ownship_colav_system = colav_builder.construct_colav(
+    #colav_systems = colav_builder.construct_colav(
     #            config = colav_config
     #        )
     
-    #print(ownship_colav_system)
-    #print(ownship_colav_system._psbmpc_params)
-    #print(ownship_colav_system._psbmpc_ownship)
-    #print(ownship_colav_system._psbmpc_cpe)
-    #print(ownship_colav_system._psbmpc)
-    #print(ownship_colav_system._im_params)
-    #print(ownship_colav_system._los)
-    #print(ownship_colav_system._obstacle_predictor)
+    #print(colav_systems)
+    #print(colav_systems._psbmpc_params)
+    #print(colav_systems._psbmpc_ownship)
+    #print(colav_systems._psbmpc_cpe)
+    #print(colav_systems._psbmpc)
+    #print(colav_systems._im_params)
+    #print(colav_systems._los)
+    #print(colav_systems._obstacle_predictor)
     #print("Getting int parameter values:")
     #for i in range(0, 5):
-    #    print(f"Index = {i}, Value = ", psbmpcI.PSBMPCParams.get_par_int(ownship_colav_system._psbmpc_params, i))
+    #    print(f"Index = {i}, Value = ", psbmpcI.PSBMPCParams.get_par_int(colav_systems._psbmpc_params, i))
     ## testing double getters
     #print("Getting double parameter values:")
     #for i in range(0, 21):
-    #    print(f"Index = {i}, Value = ", psbmpcI.PSBMPCParams.get_par_double(ownship_colav_system._psbmpc_params, i))
+    #    print(f"Index = {i}, Value = ", psbmpcI.PSBMPCParams.get_par_double(colav_systems._psbmpc_params, i))
     ## testing vector getters
     #print("Getting vector parameter values:")
-    #get_u_offsets_array = psbmpcI.PSBMPCParams.get_par_vector(ownship_colav_system._psbmpc_params, 0)
-    #get_chi_offsets_array = psbmpcI.PSBMPCParams.get_par_vector(ownship_colav_system._psbmpc_params, 1)
+    #get_u_offsets_array = psbmpcI.PSBMPCParams.get_par_vector(colav_systems._psbmpc_params, 0)
+    #get_chi_offsets_array = psbmpcI.PSBMPCParams.get_par_vector(colav_systems._psbmpc_params, 1)
     #print(get_u_offsets_array)
     #print(get_chi_offsets_array)
 
     #print("\n")
-    #print(ownship_colav_system._psbmpc_params.get_cpe_method())
-    #print(ownship_colav_system._psbmpc_params.get_prediction_method())
-    #print(ownship_colav_system._psbmpc_params.get_guidance_method())
+    #print(colav_systems._psbmpc_params.get_cpe_method())
+    #print(colav_systems._psbmpc_params.get_prediction_method())
+    #print(colav_systems._psbmpc_params.get_guidance_method())
 
     #print("\n")
-    #print(ownship_colav_system._psbmpc_ownship.get_length())
-    #print(ownship_colav_system._psbmpc_ownship.get_width())
-    #print(ownship_colav_system._psbmpc_ownship.get_T_U())
-    #print(ownship_colav_system._psbmpc_ownship.get_T_chi())
-    #print(ownship_colav_system._psbmpc_ownship.get_R_a())
-    #print(ownship_colav_system._psbmpc_ownship.get_LOS_LD())
-    #print(ownship_colav_system._psbmpc_ownship.get_LOS_K_i())
-    #print(ownship_colav_system._psbmpc_ownship.get_path_prediction_shape())
+    #print(colav_systems._psbmpc_ownship.get_length())
+    #print(colav_systems._psbmpc_ownship.get_width())
+    #print(colav_systems._psbmpc_ownship.get_T_U())
+    #print(colav_systems._psbmpc_ownship.get_T_chi())
+    #print(colav_systems._psbmpc_ownship.get_R_a())
+    #print(colav_systems._psbmpc_ownship.get_LOS_LD())
+    #print(colav_systems._psbmpc_ownship.get_LOS_K_i())
+    #print(colav_systems._psbmpc_ownship.get_path_prediction_shape())
 
     #print("\n")
-    #print(ownship_colav_system._psbmpc_cpe.get_cpe_method())
-    #print(ownship_colav_system._psbmpc_cpe.get_n_CE())
-    #print(ownship_colav_system._psbmpc_cpe.get_n_MCSKF())
-    #print(ownship_colav_system._psbmpc_cpe.get_alpha_n())
-    #print(ownship_colav_system._psbmpc_cpe.get_gate())
-    #print(ownship_colav_system._psbmpc_cpe.get_rho())
-    #print(ownship_colav_system._psbmpc_cpe.get_max_it())
-    #print(ownship_colav_system._psbmpc_cpe.get_q())
-    #print(ownship_colav_system._psbmpc_cpe.get_r())
-    #print(ownship_colav_system._psbmpc_cpe.get_segment_discretization_time())
+    #print(colav_systems._psbmpc_cpe.get_cpe_method())
+    #print(colav_systems._psbmpc_cpe.get_n_CE())
+    #print(colav_systems._psbmpc_cpe.get_n_MCSKF())
+    #print(colav_systems._psbmpc_cpe.get_alpha_n())
+    #print(colav_systems._psbmpc_cpe.get_gate())
+    #print(colav_systems._psbmpc_cpe.get_rho())
+    #print(colav_systems._psbmpc_cpe.get_max_it())
+    #print(colav_systems._psbmpc_cpe.get_q())
+    #print(colav_systems._psbmpc_cpe.get_r())
+    #print(colav_systems._psbmpc_cpe.get_segment_discretization_time())
     
     #print("\n")
-    #print(ownship_colav_system._im_params.number_of_network_evaluation_samples)
-    #print(ownship_colav_system._im_params.max_number_of_obstacles)
-    #print(ownship_colav_system._im_params.time_into_trajectory)
-    #print(ownship_colav_system._im_params.starting_distance)
-    #print(ownship_colav_system._im_params.starting_cpa_distance)
-    #print(ownship_colav_system._im_params.expanding_dbn.min_time_s)
-    #print(ownship_colav_system._im_params.expanding_dbn.max_time_s)
-    #print(ownship_colav_system._im_params.expanding_dbn.min_course_change_rad)
-    #print(ownship_colav_system._im_params.expanding_dbn.min_speed_change_m_s)
-    #print(ownship_colav_system._im_params.ample_time_s.mu)
-    #print(ownship_colav_system._im_params.ample_time_s.sigma)
-    #print(ownship_colav_system._im_params.ample_time_s.max)
-    #print(ownship_colav_system._im_params.ample_time_s.n_bins)
-    #print(ownship_colav_system._im_params.ample_time_s.minimal_accepted_by_ownship)
-    #print(ownship_colav_system._im_params.safe_distance_m.mu)
-    #print(ownship_colav_system._im_params.safe_distance_m.sigma)
-    #print(ownship_colav_system._im_params.safe_distance_m.max)
-    #print(ownship_colav_system._im_params.safe_distance_m.n_bins)
-    #print(ownship_colav_system._im_params.risk_distance_m.mu)
-    #print(ownship_colav_system._im_params.risk_distance_m.sigma)
-    #print(ownship_colav_system._im_params.risk_distance_m.max)
-    #print(ownship_colav_system._im_params.risk_distance_m.n_bins)
-    #print(ownship_colav_system._im_params.risk_distance_front_m.mu)
-    #print(ownship_colav_system._im_params.risk_distance_front_m.sigma)
-    #print(ownship_colav_system._im_params.risk_distance_front_m.max)
-    #print(ownship_colav_system._im_params.risk_distance_front_m.n_bins)
-    #print(ownship_colav_system._im_params.safe_distance_midpoint_m.mu)
-    #print(ownship_colav_system._im_params.safe_distance_midpoint_m.sigma)
-    #print(ownship_colav_system._im_params.safe_distance_midpoint_m.max)
-    #print(ownship_colav_system._im_params.safe_distance_midpoint_m.n_bins)
-    #print(ownship_colav_system._im_params.safe_distance_front_m.mu)
-    #print(ownship_colav_system._im_params.safe_distance_front_m.sigma)
-    #print(ownship_colav_system._im_params.safe_distance_front_m.max)
-    #print(ownship_colav_system._im_params.safe_distance_front_m.n_bins)
-    #print(ownship_colav_system._im_params.change_in_course_rad.minimal_change_since_init_state)
-    #print(ownship_colav_system._im_params.change_in_course_rad.minimal_change_since_last_state)
-    #print(ownship_colav_system._im_params.change_in_speed_m_s.minimal_change)
-    #print(ownship_colav_system._im_params.colregs_situation_borders_rad.HO_uncertainty_start)
-    #print(ownship_colav_system._im_params.colregs_situation_borders_rad.HO_start)
-    #print(ownship_colav_system._im_params.colregs_situation_borders_rad.HO_stop)
-    #print(ownship_colav_system._im_params.colregs_situation_borders_rad.HO_uncertainty_stop)
-    #print(ownship_colav_system._im_params.colregs_situation_borders_rad.OT_uncertainty_start)
-    #print(ownship_colav_system._im_params.colregs_situation_borders_rad.OT_start)
-    #print(ownship_colav_system._im_params.colregs_situation_borders_rad.OT_stop)
-    #print(ownship_colav_system._im_params.colregs_situation_borders_rad.OT_uncertainty_stop)
-    #print(ownship_colav_system._im_params.set_startpoint.min_time_cpa)
-    #print(ownship_colav_system._im_params.time_step_removal.min_timesteps_in_state_history)
-    #print(ownship_colav_system._im_params.time_step_removal.unmodeled_behaviour_threshold)
-    #print(ownship_colav_system._im_params.time_step_removal.time_cpa_threshold)
-    #print(ownship_colav_system._im_params.ignoring_safety_probability)
-    #print(ownship_colav_system._im_params.colregs_compliance_probability)
-    #print(ownship_colav_system._im_params.good_seamanship_probability)
-    #print(ownship_colav_system._im_params.unmodeled_behaviour)
-    #print(ownship_colav_system._im_params.priority_probability["lower"])
-    #print(ownship_colav_system._im_params.priority_probability["similar"])
-    #print(ownship_colav_system._im_params.priority_probability["higher"])
+    #print(colav_systems._im_params.number_of_network_evaluation_samples)
+    #print(colav_systems._im_params.max_number_of_obstacles)
+    #print(colav_systems._im_params.time_into_trajectory)
+    #print(colav_systems._im_params.starting_distance)
+    #print(colav_systems._im_params.starting_cpa_distance)
+    #print(colav_systems._im_params.expanding_dbn.min_time_s)
+    #print(colav_systems._im_params.expanding_dbn.max_time_s)
+    #print(colav_systems._im_params.expanding_dbn.min_course_change_rad)
+    #print(colav_systems._im_params.expanding_dbn.min_speed_change_m_s)
+    #print(colav_systems._im_params.ample_time_s.mu)
+    #print(colav_systems._im_params.ample_time_s.sigma)
+    #print(colav_systems._im_params.ample_time_s.max)
+    #print(colav_systems._im_params.ample_time_s.n_bins)
+    #print(colav_systems._im_params.ample_time_s.minimal_accepted_by_ownship)
+    #print(colav_systems._im_params.safe_distance_m.mu)
+    #print(colav_systems._im_params.safe_distance_m.sigma)
+    #print(colav_systems._im_params.safe_distance_m.max)
+    #print(colav_systems._im_params.safe_distance_m.n_bins)
+    #print(colav_systems._im_params.risk_distance_m.mu)
+    #print(colav_systems._im_params.risk_distance_m.sigma)
+    #print(colav_systems._im_params.risk_distance_m.max)
+    #print(colav_systems._im_params.risk_distance_m.n_bins)
+    #print(colav_systems._im_params.risk_distance_front_m.mu)
+    #print(colav_systems._im_params.risk_distance_front_m.sigma)
+    #print(colav_systems._im_params.risk_distance_front_m.max)
+    #print(colav_systems._im_params.risk_distance_front_m.n_bins)
+    #print(colav_systems._im_params.safe_distance_midpoint_m.mu)
+    #print(colav_systems._im_params.safe_distance_midpoint_m.sigma)
+    #print(colav_systems._im_params.safe_distance_midpoint_m.max)
+    #print(colav_systems._im_params.safe_distance_midpoint_m.n_bins)
+    #print(colav_systems._im_params.safe_distance_front_m.mu)
+    #print(colav_systems._im_params.safe_distance_front_m.sigma)
+    #print(colav_systems._im_params.safe_distance_front_m.max)
+    #print(colav_systems._im_params.safe_distance_front_m.n_bins)
+    #print(colav_systems._im_params.change_in_course_rad.minimal_change_since_init_state)
+    #print(colav_systems._im_params.change_in_course_rad.minimal_change_since_last_state)
+    #print(colav_systems._im_params.change_in_speed_m_s.minimal_change)
+    #print(colav_systems._im_params.colregs_situation_borders_rad.HO_uncertainty_start)
+    #print(colav_systems._im_params.colregs_situation_borders_rad.HO_start)
+    #print(colav_systems._im_params.colregs_situation_borders_rad.HO_stop)
+    #print(colav_systems._im_params.colregs_situation_borders_rad.HO_uncertainty_stop)
+    #print(colav_systems._im_params.colregs_situation_borders_rad.OT_uncertainty_start)
+    #print(colav_systems._im_params.colregs_situation_borders_rad.OT_start)
+    #print(colav_systems._im_params.colregs_situation_borders_rad.OT_stop)
+    #print(colav_systems._im_params.colregs_situation_borders_rad.OT_uncertainty_stop)
+    #print(colav_systems._im_params.set_startpoint.min_time_cpa)
+    #print(colav_systems._im_params.time_step_removal.min_timesteps_in_state_history)
+    #print(colav_systems._im_params.time_step_removal.unmodeled_behaviour_threshold)
+    #print(colav_systems._im_params.time_step_removal.time_cpa_threshold)
+    #print(colav_systems._im_params.ignoring_safety_probability)
+    #print(colav_systems._im_params.colregs_compliance_probability)
+    #print(colav_systems._im_params.good_seamanship_probability)
+    #print(colav_systems._im_params.unmodeled_behaviour)
+    #print(colav_systems._im_params.priority_probability["lower"])
+    #print(colav_systems._im_params.priority_probability["similar"])
+    #print(colav_systems._im_params.priority_probability["higher"])
         
     #print("\n")
-    #print(ownship_colav_system._los._params.pass_angle_threshold)
-    #print(ownship_colav_system._los._params.R_a)
-    #print(ownship_colav_system._los._params.K_p)
-    #print(ownship_colav_system._los._params.K_i)
-    #print(ownship_colav_system._los._params.max_cross_track_error_int)
-    #print(ownship_colav_system._los._params.cross_track_error_int_threshold)
+    #print(colav_systems._los._params.pass_angle_threshold)
+    #print(colav_systems._los._params.R_a)
+    #print(colav_systems._los._params.K_p)
+    #print(colav_systems._los._params.K_i)
+    #print(colav_systems._los._params.max_cross_track_error_int)
+    #print(colav_systems._los._params.cross_track_error_int_threshold)
     
     #print("\n") 
-    #print(ownship_colav_system._obstacle_predictor.get_n_ps_LOS())
-    #print(ownship_colav_system._obstacle_predictor._get_n_ps_MROU())
+    #print(colav_systems._obstacle_predictor.get_n_ps_LOS())
+    #print(colav_systems._obstacle_predictor._get_n_ps_MROU())
     

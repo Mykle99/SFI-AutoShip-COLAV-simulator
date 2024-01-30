@@ -165,9 +165,9 @@ class Config:
         default_factory=lambda: [-45.0, 45.0]
     )  # Range of [min, max] change in angle between randomly created waypoints
     hazard_buffer: float = 0.0  # Buffer to add to hazards when creating safe sea triangulation
-    rrt: Optional[RRTConfig] = RRTConfig(
+    rrt: Optional[RRTConfig] = field(default_factory=lambda: RRTConfig(
         params=RRTParams(), model=models.KinematicCSOGParams(), los=guidances.LOSGuidanceParams()
-    )
+    ))
     rrtstar: Optional[RRTConfig] = field(default_factory=lambda: RRTConfig(
         params=RRTStarParams(), model=models.KinematicCSOGParams(), los=guidances.LOSGuidanceParams()
     ))

@@ -535,13 +535,31 @@ class ScenarioGenerator:
                 self.enc.start_display()
 
             episode = {}
-            episode["ship_list"], episode["disturbance"], episode["config"] = self.generate_episode(
-                copy.deepcopy(ship_list),
-                copy.deepcopy(config),
-                ais_vessel_data_list,
-                mmsi_list,
-                show_plots=show_plots,
-            )
+            try: # The PSBMPCInterface, SBMPCInterface and IMInterface objects are not pickleable, and cannot use the deepcopy method
+                if str(config.ship_list[0].colav.name) == "COLAVType.PSBMPC" or str(config.ship_list[0].colav.name) == "COLAVType.SBMPC_CPP":
+                    episode["ship_list"], episode["disturbance"], episode["config"] = self.generate_episode(
+                        ship_list,
+                        config,
+                        ais_vessel_data_list,
+                        mmsi_list,
+                        show_plots=show_plots,
+                    )
+                else: # if == "COLAVTYPE.SBMPC" for instance (that is, the Python implementation of SBMPC)
+                    episode["ship_list"], episode["disturbance"], episode["config"] = self.generate_episode(
+                        copy.deepcopy(ship_list),
+                        copy.deepcopy(config),
+                        ais_vessel_data_list,
+                        mmsi_list,
+                        show_plots=show_plots,
+                    )
+            except AttributeError: # all other cases where the colav subsystem is not specified in the .yaml file
+                episode["ship_list"], episode["disturbance"], episode["config"] = self.generate_episode(
+                        copy.deepcopy(ship_list),
+                        copy.deepcopy(config),
+                        ais_vessel_data_list,
+                        mmsi_list,
+                        show_plots=show_plots,
+                )
             ep_str = str(ep + 1).zfill(3)
             episode["config"].name = f"{config.name}_ep{ep_str}"
             if self._config.manual_episode_accept:
@@ -614,8 +632,12 @@ class ScenarioGenerator:
         config.ship_list.sort(key=lambda x: x.id)
 
         disturbance = self.generate_disturbance(config)
+        
+        try:
+            self._prev_ship_list = copy.deepcopy(ship_list) 
+        except TypeError:
+            self._prev_ship_list = ship_list # PSBMPC and SBMPC_CPP cannot be deepcopied
 
-        self._prev_ship_list = copy.deepcopy(ship_list)
         self._episode_counter += 1
         return ship_list, disturbance, config
 

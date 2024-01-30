@@ -49,10 +49,11 @@ import math
 class COLAVType(Enum):
     """Enum for the different COLAV algorithms currently compatible with the simulator."""
 
-    VO = 0     # Kuwata VO, with LOS guidance to provide velocity references.
-    SBMPC = 1  # SB-MPC, provide trajectory offsets
-    IM = 2     # Ship Intention Inference Model
-    PSBMPC = 3 # Probabilistic SB-MPC
+    VO = 0        # Kuwata VO, with LOS guidance to provide velocity references.
+    SBMPC = 1     # SB-MPC, provide trajectory offsets
+    IM = 2        # Ship Intention Inference Model
+    PSBMPC = 3    # Probabilistic SB-MPC
+    SBMPC_CPP = 4 # SB-MPC C++ implementation
 
 
 @dataclass
@@ -75,6 +76,7 @@ class LayerConfig:
     sbmpc: Optional[sb_mpc.SBMPCParams] = None
     im: Optional[imI.IMParams.IntentionModelParameters] = None
     psbmpc: Optional[psbmpcI.PSBMPCParamsWrapper] = None
+    sbmpc_cpp : Optional[psbmpcI.SBMPCParamsWrapper] = None
 
     @classmethod
     def from_dict(cls, config_dict: dict):
@@ -93,6 +95,9 @@ class LayerConfig:
 
         if "psbmpc" in config_dict:
             config.psbmpc = cp.convert_settings_dict_to_paramsclass(psbmpcI.PSBMPCParamsWrapper, config_dict["psbmpc"])
+
+        if "sbmpc_cpp" in config_dict:
+            config.sbmpc_cpp = cp.convert_settings_dict_to_paramsclass(psbmpcI.SBMPCParamsWrapper, config_dict["sbmpc_cpp"])
 
         return config
 
@@ -113,6 +118,9 @@ class LayerConfig:
         
         if self.psbmpc is not None:
             config_dict["psbmpc"] = self.psbmpc.to_dict()
+
+        if self.sbmpc_cpp is not None:
+            config_dict["sbmpc_cpp"] = self.sbmpc_cpp.to_dict()
 
         return config_dict
 
@@ -258,7 +266,7 @@ class VOWrapper(ICOLAV):
 
 
 class SBMPCWrapper(ICOLAV):
-    """SBMPC wrapper"""
+    """SBMPC wrapper for the Python implementation in this repository."""
 
     def __init__(self, config: Config, **kwargs) -> None:
         assert config.layer1.sbmpc is not None, "SBMPC must be on the first layer for the SBMPC wrapper."
@@ -299,6 +307,173 @@ class SBMPCWrapper(ICOLAV):
             # print(f"SBMPC course output: {np.rad2deg(course_ref) + self._course_os_best} | Best course offset: {self._course_os_best} | Nominal course ref: {course_ref}")
             # print(f"SBMPC speed output: {speed_ref * self._speed_os_best} | Best speed offset: {self._speed_os_best} | Nominal speed ref: {speed_ref}")
         references[2, 0] += np.deg2rad(self._course_os_best)
+        references[3, 0] = speed_ref * self._speed_os_best
+        return references
+
+    def get_current_plan(self) -> np.ndarray:
+        refs = np.zeros((9, 1))
+        return refs
+
+    def get_colav_data(self) -> dict:
+        return {}
+
+    def plot_results(self, ax_map: plt.Axes, enc: ENC, plt_handles: dict, **kwargs) -> dict:
+        return plt_handles
+
+
+class SBMPCCPPWrapper(ICOLAV):
+    """SBMPC wrapper for the C++ implementation in thecolavrepo repository."""
+
+    def __init__(self, config: Config, **kwargs) -> None:
+        assert config.layer1.sbmpc_cpp.sbmpcparams is not None, "SBMPC parameters must be defined in the SBMPCParamsWrapper class."
+        self._sbmpc_params = config.layer1.sbmpc_cpp.sbmpcparams
+
+        assert config.layer1.sbmpc_cpp.ownshipparams is not None, "A kinematic ship model of the ownship must be defined in the PSBMPCParamsWrapper class."
+        self._sbmpc_ownship = psbmpcI.KinematicShip(config.layer1.sbmpc_cpp.ownshipparams)
+
+        assert config.layer1.sbmpc_cpp is not None, "SBMPC must be on the first layer for the SBMPC wrapper."
+        self._sbmpc = psbmpcI.SBMPC(self._sbmpc_ownship, self._sbmpc_params)
+
+        assert config.layer2.los is not None, "LOS guidance must be on the second layer for the SBMPC wrapper."
+        self._los = guidance.LOSGuidance(config.layer2.los)
+
+        self._sbmpc_targetshipparams = config.layer1.sbmpc_cpp.targetshipparams.to_dict()
+
+        self._obstacle_predictor = psbmpcI.ObstaclePredictor(
+            self._sbmpc_params, 
+            self._sbmpc_targetshipparams["r_ct"], 
+            self._sbmpc_targetshipparams["path_prediction_shape"],
+            self._sbmpc_targetshipparams["chi_offsets"]
+        )
+
+        self._t_prev = 0.0
+        self._initialized = False
+        self._t_run_sbmpc_last = 0.0
+        self._t_upd_static_obstacle_last = 0.0
+        self._speed_os_best = 1.0
+        self._course_os_best = 0.0
+        self._trajectory_os_best = []
+        self._min_depth = 5
+        self._min_distance_to_land =  10
+        self._radius_of_coverage = 550
+        self._angle_of_coverage_behind = 37.5
+        self._obstacles = []
+        self._obs_pred_hor_T = self._sbmpc_params.get_par_double(0)
+        self._obs_pred_dt = self._sbmpc_params.get_par_double(1)
+        self._epsilon_rdp = 25
+        self._grounding_hazards_in_enc = None
+        self._relevant_grounding_hazards = None
+        self._new_static_obstacle_data = True
+        _n_obs_pred_scen = self._sbmpc_params.get_par_int(1)
+        self._obs_pred_scen_Prob = np.ones(_n_obs_pred_scen) 
+        self._obs_pred_scen_Prob = self._obs_pred_scen_Prob/np.sum(self._obs_pred_scen_Prob) # Set to uniform distribution
+
+    def plan(
+        self,
+        t: float,
+        waypoints: np.ndarray,
+        speed_plan: np.ndarray,
+        ownship_state: np.ndarray,
+        do_list: list,
+        enc: Optional[ENC] = None,
+        goal_state: Optional[np.ndarray] = None,
+        w: Optional[stochasticity.DisturbanceData] = None,
+        V_w: float = 0.0,
+        wind_direction: np.ndarray = np.array([0, 0]),
+        **kwargs
+    ) -> np.ndarray:
+        if not self._initialized:
+            self._t_prev = t
+            self._initialized = True
+
+            self._grounding_hazards_in_enc = map_functions.extract_grounding_hazards_from_entire_enc(
+                self._min_depth, self._min_distance_to_land, enc
+            )
+            ownship_state_cor = [ownship_state[1], ownship_state[0], math.degrees(ownship_state[2])]
+            rel_grounding_hazards = map_functions.extract_grounding_hazards_from_relevant_sector_in_enc(
+                self._grounding_hazards_in_enc, ownship_state_cor, self._radius_of_coverage, self._angle_of_coverage_behind, enc, False
+            )
+            gdf = gpd.GeoSeries(rel_grounding_hazards)
+            simplified_geometries = gdf.simplify(self._epsilon_rdp, preserve_topology = True)
+            self._relevant_grounding_hazards = map_functions.multi_polygon_to_list_of_ndarray_flip_x_y(simplified_geometries)
+            self._new_static_obstacle_data = True
+
+            for do in do_list:
+                obs_id = do[0]
+                obs_x, obs_y, obs_Vx, obs_Vy = do[1]
+                obs_covar = psbmpcI.flatten(do[2])
+                obs_len = do[3]
+                obs_wid = do[4]
+                A, B, C, D = obs_len/2, obs_len/2, obs_wid/2, obs_wid/2 # (A, B, C, D are from AIS message, dimension quantifiers)
+                obs_aug_state = np.array([obs_x, obs_y, obs_Vx, obs_Vy, A, B, C, D, obs_id])
+
+                self._obstacles.append(
+                    psbmpcI.TrackedObstacle(obs_aug_state, obs_covar, self._obs_pred_scen_Prob, False, self._obs_pred_hor_T, self._obs_pred_dt)
+                )
+        
+        for do in do_list:
+            obs_id = do[0]
+            x, y, Vx, Vy = do[1]
+
+            # Update dynamic obstacles
+            obs_covar = psbmpcI.flatten(do[2])
+            obs_len = do[3]
+            obs_wid = do[4]
+            A, B, C, D = obs_len/2, obs_len/2, obs_wid/2, obs_wid/2
+            obs_aug_state = np.array([x, y, Vx, Vy, A, B, C, D, obs_id])
+            for obstacle in self._obstacles:
+                if obstacle.get_ID() == obs_id:
+                    obstacle.update_with_state_and_cov(
+                        obs_aug_state, obs_covar, False, self._obs_pred_dt
+                    )
+                else:
+                    self._obstacles.append(
+                        psbmpcI.TrackedObstacle(obs_aug_state, obs_covar, self._obs_pred_scen_Prob, False, self._obs_pred_hor_T, self._obs_pred_dt)
+                    )
+        
+        # Defining os_SBMPC
+        x, y, psi, u, v, _ = ownship_state # last var is r (unused)
+        cog = psi
+        sog = np.linalg.norm(np.array([u, v]))
+        os_SBMPC = np.array([x, y, cog, sog]) 
+
+        self._obstacles = self._obstacle_predictor(
+            self._obstacles, 
+            os_SBMPC, 
+            self._sbmpc_params,
+            psbmpcI.PathPredictionShape.SMOOTH
+        )
+
+        references = self._los.compute_references(waypoints, speed_plan, None, ownship_state, t - self._t_prev)
+        self._t_prev = t
+        course_ref = references[2, 0]
+        speed_ref = references[3, 0]
+        if t - self._t_run_sbmpc_last >= 1.5:
+
+            if t - self._t_upd_static_obstacle_last >= 1.5:
+                ownship_state_cor = [ownship_state[1], ownship_state[0], math.degrees(ownship_state[2])]
+                rel_grounding_hazards = map_functions.extract_grounding_hazards_from_relevant_sector_in_enc(
+                    self._grounding_hazards_in_enc, ownship_state_cor, self._radius_of_coverage, self._angle_of_coverage_behind, enc, False
+                )
+                gdf = gpd.GeoSeries(rel_grounding_hazards)
+                simplified_geometries = gdf.simplify(self._epsilon_rdp, preserve_topology = True)
+                self._relevant_grounding_hazards = map_functions.multi_polygon_to_list_of_ndarray_flip_x_y(simplified_geometries)
+                self._new_static_obstacle_data = True
+                self._t_upd_static_obstacle_last = t
+
+            os_sbmpc_pred = self._sbmpc.calculate_optimal_offsets(
+                speed_ref, course_ref, waypoints, os_SBMPC, V_w, wind_direction, self._relevant_grounding_hazards, \
+                self._obstacles, self._new_static_obstacle_data, False 
+            )
+            
+            self._new_static_obstacle_data = False
+            self._speed_os_best = os_sbmpc_pred.u_opt
+            self._course_os_best = os_sbmpc_pred.chi_opt
+            self._trajectory_os_best = os_sbmpc_pred.predicted_trajectory
+            self._t_run_sbmpc_last = t
+            print(f"SBMPC course output: {round(np.rad2deg(course_ref), 2) + self._course_os_best} | Best course offset: {round(np.rad2deg(self._course_os_best), 2)} | Nominal course ref: {round(np.rad2deg(course_ref), 2)}")
+            print(f"SBMPC speed output: {speed_ref * self._speed_os_best} | Best speed offset: {self._speed_os_best} | Nominal speed ref: {speed_ref}")
+        references[2, 0] += self._course_os_best
         references[3, 0] = speed_ref * self._speed_os_best
         return references
 
@@ -524,7 +699,7 @@ class PSBMPCWrapper(ICOLAV):
         self._obs_pred_hor_T = self._psbmpc_params.get_par_double(0)
         self._obs_pred_dt = self._psbmpc_params.get_par_double(1)
         _n_obs_pred_scen = self._psbmpc_params.get_par_int(1)
-        self._epsilon_rdp = self._psbmpc_params.get_par_double(20)
+        # self._epsilon_rdp = self._psbmpc_params.get_par_double(20)
         self._epsilon_rdp = 25
         self._obs_pred_scen_Prob = np.ones(_n_obs_pred_scen)
         self._obs_pred_scen_Prob = self._obs_pred_scen_Prob/np.sum(self._obs_pred_scen_Prob)
@@ -663,7 +838,7 @@ class PSBMPCWrapper(ICOLAV):
                 self._obstacles, 
                 os_PSBMPC, 
                 self._psbmpc_params, 
-                psbmpcI.PathPredictionShape.SMOOTH,
+                psbmpcI.PathPredictionShape.SMOOTH
             )
 
             for ship_id in mmsi_list:
@@ -710,6 +885,13 @@ class PSBMPCWrapper(ICOLAV):
         speed_ref = references[3, 0]
         if t - self._t_run_psbmpc_last >= 1.5:
 
+            # self._obstacles = self._obstacle_predictor(
+            #    self._obstacles, 
+            #    os_PSBMPC, 
+            #    self._psbmpc_params, 
+            #    psbmpcI.PathPredictionShape.SMOOTH
+            #)
+
             if t - self._t_upd_static_obstacle_last >= 1.5:
                 ownship_state_cor = [ownship_state[1], ownship_state[0], math.degrees(ownship_state[2])]
                 rel_grounding_hazards = map_functions.extract_grounding_hazards_from_relevant_sector_in_enc(
@@ -722,7 +904,8 @@ class PSBMPCWrapper(ICOLAV):
                 self._t_upd_static_obstacle_last = t
 
             os_psbmpc_pred = self._psbmpc.calculate_optimal_offsets( 
-                speed_ref, course_ref, waypoints, os_PSBMPC, V_w, wind_direction, self._relevant_grounding_hazards, self._obstacles, self._new_static_obstacle_data, False
+                speed_ref, course_ref, waypoints, os_PSBMPC, V_w, wind_direction, self._relevant_grounding_hazards, \
+                self._obstacles, self._new_static_obstacle_data, False
             )
 
             self._new_static_obstacle_data = False
@@ -766,6 +949,8 @@ class COLAVBuilder:
             colav = IMWrapper(config)
         elif config and config.name == COLAVType.PSBMPC:
             colav = PSBMPCWrapper(config)
+        elif config and config.name == COLAVType.SBMPC_CPP:
+            colav = SBMPCCPPWrapper(config)
         else:
             colav = None
 

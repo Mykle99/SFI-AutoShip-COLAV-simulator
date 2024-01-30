@@ -1,6 +1,6 @@
-"""_summary_ For testing simulator with psbmpc.
+"""_summary_ For testing simulator with C++ psbmpc and sbmpc.
 For this to work, the submodules in the path ../colav_simulator/colav_simulator/core/colav/cpp_to_py_interfaces/
-need to be built. See docs on the submodules
+need to be built. See docs on the submodules.
 """
 
 from colav_simulator.simulator import Simulator
@@ -20,17 +20,24 @@ import numpy as np
 if __name__ == "__main__":
 
     # chose which test to perform
-    print("\nChose which test to perform by setting the bools:\n"
-        '"test_manual", "test_dict", "test_from_yaml" and ' 
-        '"test_map_functions_for_use_with_psbmpc"\n')
-    test_manual = False
-    test_dict = False
-    test_from_yaml = True
+    print("\nChose which test to perform by setting one of the bools to True (at the top of the script).\n")
+    
+    # PSBMPC (C++) test
+    test_psbmpc_manual = False
+    test_psbmpc_dict = False
+    test_psbmpc_from_yaml = False
+
+    # SBMPC (C++) test
+    test_sbmpc_cpp_manual = False
+    test_sbmpc_cpp_dict = False
+    test_sbmpc_cpp_from_yaml = True
+
+    # Map test
     test_map_functions_for_use_with_psbmpc = False
 
-    if test_manual:
+    if test_psbmpc_manual:
 
-        print("Running the manual test.\n")
+        print("Running the manual PSBMPC test.\n")
 
         # init
         colav_config = ci.Config()
@@ -77,9 +84,9 @@ if __name__ == "__main__":
         )
         print("Simulation completed.")
 
-    elif test_dict:
+    elif test_psbmpc_dict:
 
-        print("Running the dict test.\n")
+        print("Running the PSBMPC dict test.\n")
 
         # setting up the dicts
         # n_bins param in im_params has to match the Bayesian network
@@ -308,13 +315,173 @@ if __name__ == "__main__":
         )
         print("Simulation completed.")
 
-    elif test_from_yaml:
+    elif test_psbmpc_from_yaml:
         
-        print("Running the yaml test.\n")
+        print("Running the PSBMPC yaml test.\n")
         print("head_on_psbmpc.yaml in the scenarios folder can be used "
             "with this test. The file can be chosen in the simulator.yaml file "
             "in the config folder. (In simulator.yaml; set simulator: "
             'scenario files: ["head_on_psbmpc.yaml])'
+        )
+
+        # init
+        simulator = Simulator()
+
+        # running the simulation
+        scenario_generator = ScenarioGenerator()
+        scenario_data_list = scenario_generator.generate_configured_scenarios()
+        output = simulator.run(scenario_data_list)
+        print("Simulation completed.")
+
+    elif test_sbmpc_cpp_manual:
+        
+        print("Running the manual SBMPC test.\n")
+
+        # init
+        colav_config = ci.Config()
+        colav_config.layer1 = ci.LayerConfig()
+        colav_config.layer2 = ci.LayerConfig()
+        colav_config.layer3 = ci.LayerConfig()
+        colav_builder = ci.COLAVBuilder()
+        simulator = Simulator()
+
+        # name
+        colav_config.name = ci.COLAVType.SBMPC_CPP # "SBMPC_CPP"
+
+        # layer 1
+        colav_config.layer1.sbmpc_cpp = psbmpcI.SBMPCParamsWrapper()
+        colav_config.layer1.sbmpc_cpp.sbmpcparams = psbmpcI.SBMPCParams()
+        colav_config.layer1.sbmpc_cpp.ownshipparams = psbmpcI.KinematicShip()
+        colav_config.layer1.sbmpc_cpp.targetshipparams = psbmpcI.ObstaclePredictor(
+            colav_config.layer1.sbmpc_cpp.sbmpcparams,
+            20, # r_ct
+            psbmpcI.PathPredictionShape.SMOOTH,
+            colav_config.layer1.sbmpc_cpp.sbmpcparams.get_par_vector(1) # "get_chi_offsets()", example: np.array([-60, -30, 0, 30, 60])
+        )
+
+        # layer 2
+        colav_config.layer2.los = guidance.LOSGuidanceParams()
+
+        # running the simulation
+        scenario_generator = ScenarioGenerator()
+        scenario_data_list = scenario_generator.generate_configured_scenarios()
+        output = simulator.run(
+            scenario_data_list, ownship_colav_system = colav_builder.construct_colav(
+                config = colav_config
+            )
+        )
+        print("Simulation completed.")
+
+    elif test_sbmpc_cpp_dict:
+
+        print("Running the SBMPC dict test.\n")
+
+        # setting all setable parameters of the COLAV system in the config_dict:
+
+        # SBMPC Parameters
+        sbmpc_params = {
+            "n_M" : 1,
+            "n_do_ps" : 5,
+            "p_step_opt" : 10,
+            "p_step_grounding" : 2,
+            "T" : 110,
+            "dt" : 0.5,
+            "t_ts" : 35,
+            "d_safe": 50,
+            "d_close": 1000,
+            "d_do_relevant" : 1500,
+            "d_so_relevant" : 150,
+            "K_coll" : 0.2,
+            "phi_AH" : 68.5, # in degrees
+            "phi_OT" : 68.5, # in degrees
+            "phi_HO" : 22.5, # in degrees
+            "phi_CR" : 68.5, # in degrees
+            "kappa" : 10.0,
+            "kappa_TC" : 20.0,
+            "K_u" : 15.0,
+            "K_du" : 6.0,
+            "K_chi_strb" : 1.3,
+            "K_dchi_strb" : 0.9,
+            "K_chi_port" : 1.6,
+            "K_dchi_port" : 1.2,
+            "K_sgn" : 8.0,
+            "T_sgn" : 140,
+            "q" : 4.0,
+            "p" : 1.0,
+            "G_1" : 100.0,
+            "G_2" : 5.0,
+            "G_3" : 0.25,
+            "G_4" : 0.01,
+            "epsilon_rdp" : 2.0,
+            "u_offsets" : [np.array([1.0, 0.5, 0.0])],
+            "chi_offsets" : [np.array([-90.0, -75.0, -60.0, -45.0, -30.0, -15.0, 0.0, 15.0, 30.0, 45.0, 60.0, 75.0, 90.0])], # in degrees
+            "prediction_method" : psbmpcI.PredictionMethod.ERK1,
+            "guidance_method" : psbmpcI.GuidanceMethod.LOS
+        }
+
+        ownship_params = {
+            "length" : 5.0,
+            "width" : 3.0,
+            "T_U" : 1.44,
+            "T_chi" : 0.92,
+            "R_a" : 5.0,
+            "LOS_LD" : 66.0,
+            "LOS_K_i" : 0.0,
+            "active_waypoint" : 0,
+            "path_prediction_shape" : psbmpcI.PathPredictionShape.SMOOTH
+        }
+
+        targetship_params = {
+            "r_ct" : 20,
+            "path_prediction_shape" : psbmpcI.PathPredictionShape.SMOOTH,
+            "chi_offsets" : np.array([-60.0, -30.0, 0.0, 30.0, 60.0]), # in degrees
+        }
+        
+        # LOS Parameters, default settings can be found in core/guidances.py
+        los_params = {
+            "pass_angle_threshold": 90.0,
+            "R_a": 25.0,
+            "K_p": 0.015,
+            "K_i": 0.0,
+            "max_cross_track_error_int": 200.0,
+            "cross_track_error_int_threshold": 50.0
+        }
+
+        # Defining the final config_dict which is used by the COLAVBuilder.construct_colav() method
+        sbmpc_wrapper_params = {
+            "sbmpc_params" : sbmpc_params,
+            "sbmpc_ownship_params" : ownship_params,
+            "sbmpc_targetship_params" : targetship_params,
+        }
+
+        config_dict = {
+            "name": "SBMPC_CPP",
+            "layer1" : {"sbmpc_cpp" : sbmpc_wrapper_params},
+            "layer2" : {"los" : los_params}
+        }
+
+        # init
+        colav_config = ci.Config.from_dict(config_dict)
+        colav_builder = ci.COLAVBuilder()
+        simulator = Simulator()
+
+        # running the simulation
+        scenario_generator = ScenarioGenerator()
+        scenario_data_list = scenario_generator.generate_configured_scenarios()
+        output = simulator.run(
+            scenario_data_list, ownship_colav_system = colav_builder.construct_colav(
+                config = colav_config
+            )
+        )
+        print("Simulation completed.")
+
+    elif test_sbmpc_cpp_from_yaml:
+        
+        print("Running the SBMPC yaml test.\n")
+        print("head_on_sbmpc_cpp.yaml in the scenarios folder can be used "
+            "with this test. The file can be chosen in the simulator.yaml file "
+            "in the config folder. (In simulator.yaml; set simulator: "
+            'scenario files: ["head_on_sbmpc_cpp.yaml])'
         )
 
         # init

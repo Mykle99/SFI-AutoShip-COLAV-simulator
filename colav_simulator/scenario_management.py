@@ -571,8 +571,8 @@ class ScenarioGenerator:
         scenario_episode_list = []
         for ep in range(config.n_episodes):
             episode = {}
-            try: # The PSBMPCInterface and IMInterface objects are not pickleable, and thus cannot use the deepcopy method
-                if str(config.ship_list[0].colav.name) == "COLAVType.PSBMPC":
+            try: # The PSBMPCInterface, SBMPCInterface and IMInterface objects are not pickleable, and cannot use the deepcopy method
+                if str(config.ship_list[0].colav.name) == "COLAVType.PSBMPC" or str(config.ship_list[0].colav.name) == "COLAVType.SBMPC_CPP":
                     episode["ship_list"], episode["disturbance"], episode["config"] = self.generate_episode(
                         ship_list,
                         config,
@@ -581,7 +581,7 @@ class ScenarioGenerator:
                         enc,
                         show_plots=show_plots,
                     )
-                else: # if == "COLAVTYPE.SBMPC" for instance
+                else: # if == "COLAVTYPE.SBMPC" for instance (that is, the Python implementation of SBMPC)
                     episode["ship_list"], episode["disturbance"], episode["config"] = self.generate_episode(
                         copy.deepcopy(ship_list),
                         copy.deepcopy(config),

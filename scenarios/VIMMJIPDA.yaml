@@ -1,0 +1,88 @@
+name: "JIPDA vs. Kalman Filter: Head-on scenario"
+save_scenario: False
+t_start: 0.0
+t_end: 400.0
+dt_sim: 0.5
+utm_zone: 33
+map_size: [15000.0, 12500.0]
+map_origin_enu: [37000.0, 6950450.0]
+map_data_files: ["More_og_Romsdal_utm33.gdb"]
+new_load_of_map_data: False
+n_episodes: 2
+type: HO
+n_random_ships: 1
+ship_list:
+  - csog_state: [6957500.0, 39500.0, 7.0, 45.0]
+    waypoints: [[6957500.0, 6959500.0], [39500.0, 41500.0]]
+    speed_plan: [7.0, 7.0]
+    id: 0
+    mmsi: 100
+    guidance:
+      los:
+        pass_angle_threshold: 80.0
+        R_a: 15.0
+        K_p: 0.024
+        K_i: 0.0
+        max_cross_track_error_int: 101.0
+        cross_track_error_int_threshold: 30.0
+    tracker:
+      VIMMJIPDA:
+        IMM_off: True
+        single_target: True
+        visibility_off: True
+      # kf:
+      #   P_0: [49.1, 49.1, 0.11, 0.11]
+      #   q: 0.15
+    sensors:
+      - radar:
+          max_range: 2000.0
+          measurement_rate: 0.5
+          R: [10.0, 10.0]
+          R_true: [10.0, 10.0]
+    controller:
+      flsh:
+        K_p_u: 3.0
+        K_i_u: 0.1
+        K_p_psi: 3.0
+        K_d_psi: 1.75
+        K_i_psi: 0.003
+        max_speed_error_int: 2.0
+        speed_error_int_threshold: 1.0
+        max_psi_error_int: 50.0
+        psi_error_int_threshold: 15.0
+    model:
+      telemetron: ''
+  - csog_state: [6959500.0, 41500.0, 7.0, 225.0]
+    waypoints: [[6959500.0, 6957500.0], [41500.0, 39500.0]]
+    speed_plan: [7.0, 7.0]
+    id: 1
+    mmsi: 101
+    tracker:
+      god_tracker: ""
+    sensors:
+      - radar:
+          max_range: 2000.0
+          measurement_rate: 0.5
+          R: [25.0, 25.0]
+          R_true: [25.0, 25.0]
+    guidance:
+      los:
+        pass_angle_threshold: 80.0
+        R_a: 15.0
+        K_p: 0.024
+        K_i: 0.0
+        max_cross_track_error_int: 101.0
+        cross_track_error_int_threshold: 30.0
+    controller:
+      flsh:
+        K_p_u: 1.0
+        K_i_u: 0.05
+        K_p_psi: 3.0
+        K_d_psi: 3.0
+        K_i_psi: 0.005
+        max_speed_error_int: 0.75
+        speed_error_int_threshold: 0.2
+        max_psi_error_int: 20.0
+        psi_error_int_threshold: 10.0
+    model:
+      telemetron: ''

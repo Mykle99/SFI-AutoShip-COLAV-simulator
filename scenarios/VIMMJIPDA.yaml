@@ -8,7 +8,7 @@ map_size: [15000.0, 12500.0]
 map_origin_enu: [37000.0, 6950450.0]
 map_data_files: ["More_og_Romsdal_utm33.gdb"]
 new_load_of_map_data: False
-n_episodes: 2
+n_episodes: 1
 type: HO
 n_random_ships: 1
 ship_list:

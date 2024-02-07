@@ -23,14 +23,14 @@ if __name__ == "__main__":
     print("\nChose which test to perform by setting one of the bools to True (at the top of the script).\n")
     
     # PSBMPC (C++) test
-    test_psbmpc_manual = False
+    test_psbmpc_manual = True
     test_psbmpc_dict = False
     test_psbmpc_from_yaml = False
 
     # SBMPC (C++) test
     test_sbmpc_cpp_manual = False
     test_sbmpc_cpp_dict = False
-    test_sbmpc_cpp_from_yaml = True
+    test_sbmpc_cpp_from_yaml = False
 
     # Map test
     test_map_functions_for_use_with_psbmpc = False
@@ -70,6 +70,7 @@ if __name__ == "__main__":
 
         # layer 2
         colav_config.layer2.im = imI.IMParams.default_parameters(num_ships)
+        colav_config.layer2.im.time_into_trajectory = 50
 
         # layer 3
         colav_config.layer3.los = guidance.LOSGuidanceParams()
@@ -255,7 +256,7 @@ if __name__ == "__main__":
         im_params = {
             "number_of_network_evaluation_samples" : 100000,
             "max_number_of_obstacles" : 1,
-            "time_into_trajectory" : 0,
+            "time_into_trajectory" : 50,
             "starting_distance" : 10000,
             "starting_cpa_distance" : 15000,
             "expanding_dbn" : expanding_dbn,

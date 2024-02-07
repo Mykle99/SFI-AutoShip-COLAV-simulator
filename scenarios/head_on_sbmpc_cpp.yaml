@@ -82,9 +82,14 @@ ship_list:
           max_cross_track_error_int: 200.0
           cross_track_error_int_threshold: 50.0
     tracker:
-      kf:
-        P_0: [49.1, 49.1, 0.11, 0.11]
-        q: 0.15
+      VIMMJIPDA:
+        IMM_off: True
+        single_target: True
+        visibility_off: True
+      #kf:
+      #  P_0: [49.1, 49.1, 0.11, 0.11]
+      #  q: 0.15
+      #god_tracker: ""
     sensors:
       - radar:
           max_range: 2000.0

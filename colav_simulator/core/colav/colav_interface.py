@@ -931,6 +931,7 @@ class PSBMPCWrapper(ICOLAV):
                                 self._obs_pred_scen_Prob[ship_id] = np.ones(n_pred_obstacle)
                                 self._obs_pred_scen_Prob[ship_id] = self._obs_pred_scen_Prob[ship_id]/np.sum(self._obs_pred_scen_Prob[ship_id])
                                 obstacle.set_scenario_probabilities(self._obs_pred_scen_Prob[ship_id])
+                                #print(f"Pr_s^DO{ship_id - 1} set to {self._obs_pred_scen_Prob[ship_id]}")
                                 break
 
         references = self._los.compute_references(waypoints, speed_plan, None, ownship_state, t - self._t_prev)

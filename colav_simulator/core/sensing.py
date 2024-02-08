@@ -47,7 +47,7 @@ class RadarParams:
         default_factory=lambda: np.diag([5.0**2, 5.0**2])
     )  # meas cov that reflects the true noise characteristics. Used to generate measurements
     clutter_cardinality_expectation: int = 5
-    generate_clutter: bool = True
+    generate_clutter: bool = field(default_factory=lambda: False)
 
     @classmethod
     def from_dict(self, config_dict: dict):
@@ -56,6 +56,8 @@ class RadarParams:
             measurement_rate=config_dict["measurement_rate"],
             R=np.diag(config_dict["R"]),
             R_true=np.diag(config_dict["R_true"]),
+            clutter_cardinality_expectation=config_dict["clutter_cardinality_expectation"],
+            generate_clutter=config_dict["generate_clutter"],
         )
 
     def to_dict(self) -> dict:
@@ -196,7 +198,7 @@ class Radar(ISensor):
             theta = np.random.uniform(0, 2*np.pi, cardinality)
             x = r * np.cos(theta) + ownship_state[0]
             y = r * np.sin(theta) + ownship_state[1]
-            print(cardinality, type(cardinality))
+            # print(cardinality, type(cardinality))
             for i in range(cardinality[0]):
                 clutter.append([x[i],y[i]])
             return clutter

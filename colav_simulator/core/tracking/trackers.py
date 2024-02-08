@@ -496,6 +496,7 @@ class VIMMJIPDA(ITracker):
             meas_covariance_NE = sensor._params.R
             clutter = sensor.generate_clutter(t, ownship_state)
             print("clutter = : ", clutter , "type: ", type(clutter))
+            # print(sensor._params.to_dict())
         # meas_covariance_NE[0][0] = 10 # To see that the covariance comes out correct
         
         # TODO: Set this value via 

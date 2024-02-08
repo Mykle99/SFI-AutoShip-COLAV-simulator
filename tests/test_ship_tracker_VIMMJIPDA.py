@@ -2,7 +2,7 @@ import colav_simulator.common.math_functions as mf
 import colav_simulator.core.controllers as controllers
 import colav_simulator.core.guidances as guidances
 import colav_simulator.core.models as models
-import colav_simulator.core.sensing as sensorss
+import colav_simulator.core.sensing as sensors
 import colav_simulator.core.ship as ship
 import colav_simulator.core.stochasticity as stochasticity
 import colav_simulator.core.tracking.trackers as trackers
@@ -28,7 +28,7 @@ if __name__ == "__main__":
     scenario_generator = ScenarioGenerator(sg_config)
     scenario_data = scenario_generator.generate(config_file=scenario_file)
     simulator = Simulator()
-    simulator.toggle_liveplot_visibility(True)
+    simulator.toggle_liveplot_visibility(False)
     output = simulator.run([scenario_data])
     print("done")
 
@@ -76,10 +76,10 @@ if __name__ == "__main__":
     
     
 
-    # folder_path = '/home/ragnar/Github_test/Plotting_SR_2023/'
-    # folder_path_backup = '/home/ragnar/Github_test/Plotting_SR_2023/Backup/'
-    # # file_name = 'Test3_VIMMJIPDA'
-    # # file_name_backup = 'Test3_VIMMJIPDA'
+    # folder_path = '/home/ragnarnw/Github/Plotting/Plotting_SR_2023/'
+    #folder_path_backup = '/home/ragnar/Github/Plotting_SR_2023/Backup/'
+    # file_name = 'Test3_VIMMJIPDA'
+    #file_name_backup = 'Test3_VIMMJIPDA'
     # file_name = 'Test3_KF'
     # file_name_backup = 'Test3_KF'
 

@@ -552,7 +552,14 @@ class ScenarioGenerator:
         self._first_csog_states = [None for _ in range(max_number_of_ships)]
         for ep in range(n_episodes):
             n_random_ships = n_random_ships_list[ep]
-            config_copy = copy.deepcopy(config)
+            try: # The PSBMPCInterface, SBMPCInterface and IMInterface objects are not pickleable, and cannot use the deepcopy method
+                if str(config.ship_list[0].colav.name) == "COLAVType.PSBMPC" or str(config.ship_list[0].colav.name) == "COLAVType.SBMPC_CPP":
+                    config_copy = config
+                else: # if == "COLAVTYPE.SBMPC" for instance (that is, the Python implementation of SBMPC)
+                    config_copy = copy.deepcopy(config)
+            except AttributeError: # all other cases where the colav subsystem is not specified in the .yaml file
+                    config_copy = copy.deepcopy(config)
+
             config_copy.n_random_ships = n_random_ships
 
             ship_list, config_copy = self._create_partially_defined_ships(config_copy)

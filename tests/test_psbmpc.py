@@ -23,12 +23,12 @@ if __name__ == "__main__":
     print("\nChose which test to perform by setting one of the bools to True (at the top of the script).\n")
     
     # PSBMPC (C++) test
-    test_psbmpc_manual = True
+    test_psbmpc_manual = False
     test_psbmpc_dict = False
     test_psbmpc_from_yaml = False
 
     # SBMPC (C++) test
-    test_sbmpc_cpp_manual = False
+    test_sbmpc_cpp_manual = True
     test_sbmpc_cpp_dict = False
     test_sbmpc_cpp_from_yaml = False
 

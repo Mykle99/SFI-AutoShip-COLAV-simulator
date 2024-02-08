@@ -77,7 +77,7 @@ if __name__ == "__main__":
 
         # def the colav sys for the os
         colav = colav_builder.construct_colav(config = colav_config)
-        colav_systems = [(0, colav)]
+        colav_systems = [(0, colav)] # [(0, colav), (1, colav)]
 
         # running the simulation
         scenario_generator = ScenarioGenerator()

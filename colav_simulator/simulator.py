@@ -16,6 +16,7 @@ import colav_simulator.common.map_functions as mapf
 import colav_simulator.common.miscellaneous_helper_methods as mhm
 import colav_simulator.common.paths as dp
 import colav_simulator.core.stochasticity as stochasticity
+import colav_simulator.core.colav.colav_interface as ci
 import colav_simulator.scenario_config as sc
 import colav_simulator.viz.visualizer as viz
 import numpy as np
@@ -169,7 +170,14 @@ class Simulator:
                 scenario_episode_file = episode_config.filename
 
                 self.initialize_scenario_episode(ship_list, episode_config, scenario_enc, episode_disturbance, colav_systems)
+                
                 np.random.seed(ep) # This sets the seed for measurement noise so that trackers can be compared
+                #self.ownship._colav._psbmpc_cpe.set_seed(ep) # This sets the seed for the ownship's CPE's PRNG
+                if colav_systems is not None:
+                    for ship_id, _ in colav_systems:
+                        for _, ship_obj in enumerate(self.ship_list):
+                            if ship_obj.id == ship_id and type(ship_obj._colav) == ci.PSBMPCWrapper:
+                                ship_obj._colav._psbmpc_cpe.set_seed(ep) # This sets the seed for the OS's and TSs' ((with PSBMPC colav) CPE's PRNG
 
                 if self._config.verbose:
                     print(f"\rSimulator: Running scenario episode nr {ep + 1}: {scenario_episode_file}...")

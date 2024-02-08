@@ -28,7 +28,7 @@ if __name__ == "__main__":
     scenario_generator = ScenarioGenerator(sg_config)
     scenario_data = scenario_generator.generate(config_file=scenario_file)
     simulator = Simulator()
-    simulator.toggle_liveplot_visibility(False)
+    simulator.toggle_liveplot_visibility(True)
     output = simulator.run([scenario_data])
     print("done")
 

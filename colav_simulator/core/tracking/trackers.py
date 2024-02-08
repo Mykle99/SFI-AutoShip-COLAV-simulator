@@ -491,11 +491,11 @@ class VIMMJIPDA(ITracker):
         sensor_measurements = []
         for sensor in self.sensors:
             z = sensor.generate_measurements(t, true_do_states, ownship_state)
-            print("z = : ", z , "type: ", type(z))
+            # print("z = : ", z , "type: ", type(z))
             sensor_measurements.append(z)
             meas_covariance_NE = sensor._params.R
             clutter = sensor.generate_clutter(t, ownship_state)
-            print("clutter = : ", clutter , "type: ", type(clutter))
+            # print("clutter = : ", clutter , "type: ", type(clutter))
             # print(sensor._params.to_dict())
         # meas_covariance_NE[0][0] = 10 # To see that the covariance comes out correct
         
@@ -599,8 +599,8 @@ class VIMMJIPDA(ITracker):
             # print(mean_NE, type(mean_NE), 'mean \n')
 
             
-            # print('cov xy',cov_xy, type(cov_xy), '\n')
-            # print('cov NE',cov_NE, type(cov_NE), '\n')
+            # print('cov xy\n',cov_xy, type(cov_xy), '\n')
+            # print('cov NE\n',cov_NE, type(cov_NE), '\n')
         # print(true_do_states, 'true states')
         # print(self._labels, 'labels')
         # print(self._labels, 'labels')

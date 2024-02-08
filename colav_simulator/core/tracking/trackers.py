@@ -15,6 +15,7 @@ from typing import Optional, Tuple
 import colav_simulator.common.config_parsing as cp
 import numpy as np
 import scipy.linalg as la
+from colav_simulator.core.sensing import Radar
 
 #Create a simple import for the VIMMJIPDA package until it is correctly implemented as a submodule.
 #TODO: Make decision on how submodule should work and implement it later
@@ -490,20 +491,19 @@ class VIMMJIPDA(ITracker):
         
         sensor_measurements = []
         for sensor in self.sensors:
-            z = sensor.generate_measurements(t, true_do_states, ownship_state)
-            # print("z = : ", z , "type: ", type(z))
-            sensor_measurements.append(z)
-            meas_covariance_NE = sensor._params.R
-            clutter = sensor.generate_clutter(t, ownship_state)
-            # print("clutter = : ", clutter , "type: ", type(clutter))
-            # print(sensor._params.to_dict())
+            if isinstance(sensor, Radar):
+                z = sensor.generate_measurements(t, true_do_states, ownship_state)
+                # print("z = : ", z , "type: ", type(z))
+                sensor_measurements.append(z)
+                meas_covariance_NE = sensor._params.R
+                clutter = sensor.generate_clutter(t, ownship_state)
+                # print("clutter = : ", clutter , "type: ", type(clutter))
+                # print(sensor._params.to_dict())
         # meas_covariance_NE[0][0] = 10 # To see that the covariance comes out correct
         
         # TODO: Set this value via 
-        meas_covariance_XY = np.asarray([[meas_covariance_NE[1][1], 0], [0, meas_covariance_NE[0][0]]])
         # print(meas_covariance_XY)
             
-        # TODO: Specify whether the Tracker and the measurements should use the same Cov or not. (Edmund mentioned this) 
         # TODO: Add functionality for several sensors
 
         # print(sensor_measurements)
@@ -544,6 +544,8 @@ class VIMMJIPDA(ITracker):
                 #     print(do_state[0], do_state[1])
                 if not np.isnan(meas[0]) and not np.isnan(meas[1]):
                     values = np.asarray([meas[1],meas[0]])
+                    meas_covariance_XY = np.asarray([[meas_covariance_NE[1][1], 0], [0, meas_covariance_NE[0][0]]])
+
                     # TODO: Add Functionality to choose if Filter knows the measurement Cov or not
                     # sensor_measurement.add(Measurement(values, measurement_params['cart_cov'],  t)) # Choose this if Tracker should not know meas cov
                     sensor_measurement.add(Measurement(values, meas_covariance_XY,  t)) # Choose this if Tracker should know meas cov
@@ -551,9 +553,10 @@ class VIMMJIPDA(ITracker):
         # Check if this is a timestep with measurements
         for sensor in self.sensors:
             # Loop through all DO
-            for i, (_, xs, length, width) in enumerate(true_do_states):
-                if ((t - sensor._prev_meas_time[i]) % (1 / sensor._params.measurement_rate) == 0):
-                    new_meas = True
+            if isinstance(sensor, Radar):
+                for i, (_, xs, length, width) in enumerate(true_do_states):
+                    if ((t - sensor._prev_meas_time[i]) % (1 / sensor._params.measurement_rate) == 0):
+                        new_meas = True
             
         # Run the VIMMJIPDA Tracker at the same rate as sensor measurement rates
         if new_meas:

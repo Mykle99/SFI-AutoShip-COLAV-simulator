@@ -41,6 +41,11 @@ ship_list:
           R_true: [10.0, 10.0]
           clutter_cardinality_expectation: 10
           generate_clutter: False
+      # - ais:
+          # max_range: 5000.0
+          # ais_class: A
+          # R: [26.3, 26.3, 0.1, 0.1]
+          # R_true: [26.3, 26.3, 0.1, 0.1]
     controller:
       flsh:
         K_p_u: 3.0

@@ -30,7 +30,8 @@ from enum import Enum
 from typing import Optional
 from seacharts.enc import ENC
 from colav_simulator.core.colav.psbmpc import PSBMPCInterface as psbmpcI
-from colav_simulator.core.colav.im import IMInterface as imI 
+from colav_simulator.core.colav.im import IMInterface as imI
+from shapely.geometry import Point 
 
 import colav_simulator.common.config_parsing as cp
 import colav_simulator.common.map_functions as map_functions
@@ -702,16 +703,20 @@ class PSBMPCWrapper(ICOLAV):
         self._obstacles = []
         self._obs_pred_hor_T = self._psbmpc_params.get_par_double(0)
         self._obs_pred_dt = self._psbmpc_params.get_par_double(1)
-        self._n_obs_pred_scen = self._psbmpc_params.get_par_int(1)
         # self._epsilon_rdp = self._psbmpc_params.get_par_double(20)
         self._epsilon_rdp = 25
         self._obs_pred_scen_Prob = {}
-        self._uniform_obs_pred_scen_Prob = np.ones(self._n_obs_pred_scen) 
-        self._uniform_obs_pred_scen_Prob = self._uniform_obs_pred_scen_Prob/np.sum(self._uniform_obs_pred_scen_Prob)
         self._did_intention_inference_run = {}
         self._grounding_hazards_in_enc = None
         self._relevant_grounding_hazards = None
         self._new_static_obstacle_data = True
+        self._prune_obstacle_paths = True
+        self._grounding_hazard_disks_all_ships = {}
+        self._did_grounding_hazard_disks_all_ships_exist = {}
+        self._n_pred_obstacle = {}
+
+        self._period_im = 2.5
+        self._period_psbmpc = 1.5
 
     def plan(
         self,
@@ -743,83 +748,90 @@ class PSBMPCWrapper(ICOLAV):
             self._relevant_grounding_hazards = map_functions.multi_polygon_to_list_of_ndarray_flip_x_y(simplified_geometries)
             self._new_static_obstacle_data = True
 
+        # Update obstacle everytime either the IM or the PSBMPC runs
+        if ((t - self._t_run_psbmpc_last >= self._period_psbmpc) or (t - self._t_run_im_last >= self._period_im)):    
+            # Format data to be compatible with IM
+            # Making pairs of OS (0) and TS (1) for the IM, hence only 0 and 1 are needed for the mmsi_list 
+            mmsi_list = imI.IM.IntVector()
+            mmsi_list.append(0)
+            mmsi_list.append(1)
+
+            # Dict for keeping pairs of OS and TS states
+            ship_states_dict = {} 
+
+            # Ownship ID needs to be in the ship list
+            os_id = 0
+            x, y, psi, u, v, _ = ownship_state # last var is r (unused)
+            cog = psi
+            sog = np.linalg.norm(np.array([u, v]))
+            os_ship_state = np.array([x, y, cog, sog])
+            os_PSBMPC = np.array([x, y, cog, sog]) 
+
             for do in do_list:
                 obs_id = do[0]
-                obs_x, obs_y, obs_Vx, obs_Vy = do[1]
+                x, y, Vx, Vy = do[1]
+                cog = np.arctan2(Vy, Vx)
+                sog = np.linalg.norm(np.array([Vx, Vy]))
+                do_ship_state = np.array([x, y, cog, sog])
+                
+                ship_states = imI.IM.IntVector4dMap()
+                ship_states[0] = os_ship_state
+                ship_states[1] = do_ship_state
+
+                # dict where every obs_id (obs ids -> 1, 2, 3, ..., n) is a key and the value 
+                # is a ship_states dict where the values are a pair of OS (id = 0) and TS (id = 1) ids
+                ship_states_dict[obs_id] = ship_states
+
+                # Update dynamic obstacles
                 obs_covar = psbmpcI.flatten(do[2])
                 obs_len = do[3]
                 obs_wid = do[4]
-                A, B, C, D = obs_len/2, obs_len/2, obs_wid/2, obs_wid/2 # (A, B, C, D are from AIS message, dimension quantifiers)
-                obs_aug_state = np.array([obs_x, obs_y, obs_Vx, obs_Vy, A, B, C, D, obs_id])
+                A, B, C, D = obs_len/2, obs_len/2, obs_wid/2, obs_wid/2
+                obs_aug_state = np.array([x, y, Vx, Vy, A, B, C, D, obs_id])
 
-                self._obstacles.append(
-                    psbmpcI.TrackedObstacle(obs_aug_state, obs_covar, self._uniform_obs_pred_scen_Prob, False, self._obs_pred_hor_T, self._obs_pred_dt)
-                )
-                self._did_intention_inference_run[obs_id] = False
-            
-        # Format data to be compatible with IM
-        # Making pairs of OS (0) and TS (1) for the IM, hence only 0 and 1 are needed for the mmsi_list 
-        mmsi_list = imI.IM.IntVector()
-        mmsi_list.append(0)
-        mmsi_list.append(1)
-
-        # Dict for keeping pairs of OS and TS states
-        ship_states_dict = {} 
-
-        # Ownship ID needs to be in the ship list
-        os_id = 0
-        x, y, psi, u, v, _ = ownship_state # last var is r (unused)
-        cog = psi
-        sog = np.linalg.norm(np.array([u, v]))
-        os_ship_state = np.array([x, y, cog, sog])
-        os_PSBMPC = np.array([x, y, cog, sog]) 
-
-        for do in do_list:
-            obs_id = do[0]
-            x, y, Vx, Vy = do[1]
-            cog = np.arctan2(Vy, Vx)
-            sog = np.linalg.norm(np.array([Vx, Vy]))
-            do_ship_state = np.array([x, y, cog, sog])
-            
-            ship_states = imI.IM.IntVector4dMap()
-            ship_states[0] = os_ship_state
-            ship_states[1] = do_ship_state
-
-            # dict where every obs_id (obs ids -> 1, 2, 3, ..., n) is a key and the value 
-            # is a ship_states dict where the values are a pair of OS (id = 0) and TS (id = 1) ids
-            ship_states_dict[obs_id] = ship_states
-
-            # Update dynamic obstacles
-            obs_covar = psbmpcI.flatten(do[2])
-            obs_len = do[3]
-            obs_wid = do[4]
-            A, B, C, D = obs_len/2, obs_len/2, obs_wid/2, obs_wid/2
-            obs_aug_state = np.array([x, y, Vx, Vy, A, B, C, D, obs_id])
-
-            in_tracked_obstacles = False
-            for obstacle in self._obstacles:
-                if obstacle.get_ID() == obs_id:
-                    obstacle.update_with_state_and_cov(
-                        obs_aug_state, obs_covar, False, self._obs_pred_dt
+                in_tracked_obstacles = False
+                for obstacle in self._obstacles:
+                    if obstacle.get_ID() == obs_id:
+                        obstacle.update_with_state_and_cov(
+                            obs_aug_state, obs_covar, False, self._obs_pred_dt
+                        )
+                        in_tracked_obstacles = True
+                        break
+                if not in_tracked_obstacles:
+                    self._obstacles.append(
+                        psbmpcI.TrackedObstacle(obs_aug_state, obs_covar, False, self._obs_pred_hor_T, self._obs_pred_dt)
                     )
-                    in_tracked_obstacles = True
-                    break
-            if not in_tracked_obstacles:
-                self._obstacles.append(
-                    psbmpcI.TrackedObstacle(obs_aug_state, obs_covar, self._uniform_obs_pred_scen_Prob, False, self._obs_pred_hor_T, self._obs_pred_dt)
-                )
-                self._did_intention_inference_run[obs_id] = False        
+                    self._did_intention_inference_run[obs_id] = False
+                    
+                # d_do_relevant > the estimated distance between the OS and the given TS
+                if self._psbmpc_params.get_par_double(4) > math.sqrt((ownship_state[0] - do_ship_state[0])**2 + (ownship_state[1] - do_ship_state[1])**2):
+                    do_ship_state_cor = [do_ship_state[1], do_ship_state[0]] 
+                    self._grounding_hazard_disks_all_ships[obs_id] = map_functions.extract_grounding_hazards_method_from_GPU_paper(
+                        self._grounding_hazards_in_enc, self._radius_of_coverage, do_ship_state_cor 
+                    )
+                else:
+                    if obs_id in self._grounding_hazard_disks_all_ships:
+                        self._grounding_hazard_disks_all_ships.pop(obs_id)
         
-        self._obstacles = self._obstacle_predictor(
-            self._obstacles, 
-            os_PSBMPC, 
-            self._psbmpc_params, 
-            psbmpcI.PathPredictionShape.SMOOTH
-        )
+            # Predict paths for the obstacles
+            self._obstacles = self._obstacle_predictor(
+                self._obstacles, 
+                os_PSBMPC, 
+                self._psbmpc_params, 
+                psbmpcI.PathPredictionShape.SMOOTH
+            )
 
         # Intention Model
-        if t - self._t_run_im_last >= 2.5 and len(self._obstacles) != 0:
+        if t - self._t_run_im_last >= self._period_im:
             self._t_run_im_last = t
+            # Prune the obstacle's paths
+            # Executed as often as the IM is (to get updated Prs for each path, old Prs for old paths are not applicable to new paths)
+            if self._prune_obstacle_paths:
+                for obs_id in self._grounding_hazard_disks_all_ships:
+                    for obstacle in self._obstacles:
+                        if obstacle.get_ID() == obs_id:
+                            self.prune_obstacle_paths(obstacle)
+                            break
 
             # Calculates intentions. If not initialized, initializes if distance is small enough and sog is large enough
             for do in do_list:
@@ -875,21 +887,15 @@ class PSBMPCWrapper(ICOLAV):
                 pred_obs_trajectories_dict = {}
                 trajectory_candidates_dict[ship_id] = {}
                 if (ship_id != os_id) and (ship_id in self._ship_intentions):
-                    for obstacle in self._obstacles:
-                        if obstacle.get_ID() == ship_id:
-                            pred_obs_trajectories_dict[ship_id] = obstacle.get_trajectories()
-                            if len(pred_obs_trajectories_dict[ship_id]) == self._n_obs_pred_scen: # d_do_relevant will cause "n_ps" to be 1 if distance is too large
+                    for obstacle_i in self._obstacles:
+                        if obstacle_i.get_ID() == ship_id:
+                            pred_obs_trajectories_dict[ship_id] = obstacle_i.get_trajectories()
+                            if len(pred_obs_trajectories_dict[ship_id]) != 1: # d_do_relevant will cause "n_ps" to be 1 if distance is too large
                                 updated_trajectory_dict[ship_id] = True
                             break
                     
                     # Change state in predicted trajectories from [x, y, Vx, Vy] to [x, y, cog, sog]
                     if updated_trajectory_dict[ship_id]:
-                        self._obstacles = self._obstacle_predictor(
-                            self._obstacles, 
-                            os_PSBMPC, 
-                            self._psbmpc_params, 
-                            psbmpcI.PathPredictionShape.SMOOTH
-                        )
                         for i in range(len(pred_obs_trajectories_dict[ship_id])):
                             Vx_i = pred_obs_trajectories_dict[ship_id][i][2]
                             Vy_i = pred_obs_trajectories_dict[ship_id][i][3]
@@ -915,22 +921,22 @@ class PSBMPCWrapper(ICOLAV):
                         # Pr_s^ship_id is only set during situation (not before, not after)
                         # "len(traj_probabilities_list) = 1 before and after situation"
                         # len(traj_probabilities_list) = len(self._obs_pred_scen_Prob) during situation
-                        if len(traj_probabilities_list) == len(self._uniform_obs_pred_scen_Prob):
-                            for obstacle in self._obstacles:
-                                if obstacle.get_ID() == ship_id:
+                        if len(traj_probabilities_list) == self._n_pred_obstacle[ship_id]:
+                            for obstacle_j in self._obstacles:
+                                if obstacle_j.get_ID() == ship_id:
                                     self._obs_pred_scen_Prob[ship_id] = traj_probabilities_list
                                     if np.sum(self._obs_pred_scen_Prob[ship_id]) < 0.05: # if only small probabilities, then set to uniform
-                                        self._obs_pred_scen_Prob[ship_id] = self._uniform_obs_pred_scen_Prob
-                                    obstacle.set_scenario_probabilities(self._obs_pred_scen_Prob[ship_id])
-                                    #print(f"Pr_s^DO{ship_id - 1} set to {self._obs_pred_scen_Prob[ship_id]}")
+                                        self._obs_pred_scen_Prob[ship_id] = np.ones(self._n_pred_obstacle[ship_id])
+                                        self._obs_pred_scen_Prob[ship_id] = self._obs_pred_scen_Prob[ship_id]/np.sum(self._obs_pred_scen_Prob[ship_id])
+                                    obstacle_j.set_scenario_probabilities(self._obs_pred_scen_Prob[ship_id])
+                                    print(f"Pr_s^DO{ship_id - 1} set to {self._obs_pred_scen_Prob[ship_id]}")
                                     break
                     else:
-                        for obstacle in self._obstacles:
-                            if obstacle.get_ID() == ship_id:
-                                n_pred_obstacle = len(obstacle.get_trajectories())
-                                self._obs_pred_scen_Prob[ship_id] = np.ones(n_pred_obstacle)
+                        for obstacle_k in self._obstacles:
+                            if obstacle_k.get_ID() == ship_id:
+                                self._obs_pred_scen_Prob[ship_id] = np.ones(self._n_pred_obstacle[ship_id])
                                 self._obs_pred_scen_Prob[ship_id] = self._obs_pred_scen_Prob[ship_id]/np.sum(self._obs_pred_scen_Prob[ship_id])
-                                obstacle.set_scenario_probabilities(self._obs_pred_scen_Prob[ship_id])
+                                obstacle_k.set_scenario_probabilities(self._obs_pred_scen_Prob[ship_id])
                                 #print(f"Pr_s^DO{ship_id - 1} set to {self._obs_pred_scen_Prob[ship_id]}")
                                 break
 
@@ -938,8 +944,8 @@ class PSBMPCWrapper(ICOLAV):
         self._t_prev = t
         course_ref = references[2, 0]
         speed_ref = references[3, 0]
-        if t - self._t_run_psbmpc_last >= 1.5:
-            if t - self._t_upd_static_obstacle_last >= 1.5:
+        if t - self._t_run_psbmpc_last >= self._period_psbmpc:
+            if t - self._t_upd_static_obstacle_last >= self._period_psbmpc:
                 ownship_state_cor = [ownship_state[1], ownship_state[0], math.degrees(ownship_state[2])]
                 rel_grounding_hazards = map_functions.extract_grounding_hazards_from_relevant_sector_in_enc(
                     self._grounding_hazards_in_enc, ownship_state_cor, self._radius_of_coverage, self._angle_of_coverage_behind, enc, False
@@ -965,6 +971,88 @@ class PSBMPCWrapper(ICOLAV):
         references[2, 0] += self._course_os_best
         references[3, 0] = speed_ref * self._speed_os_best
         return references
+
+    def prune_obstacle_paths(self, obstacle: psbmpcI.TrackedObstacle) -> None:
+        """Prunes the obstacle's paths.
+
+        Args:
+            - obstacle (psbmpcI.TrackedObstacle): The obstacle to prune the paths of.
+        """
+        paths = obstacle.get_trajectories()
+        paths_v = obstacle.get_mean_velocity_trajectories()
+        obs_id = obstacle.get_ID()
+        n_paths = np.shape(paths)[0]
+        
+        if n_paths == 1:
+            self._update_obstacle_properties(obstacle, obs_id, paths, paths_v, n_paths)
+            return 
+        
+        path_shortening_divisor = 2
+        while path_shortening_divisor < 6: # Tuning parameter
+            path_count = 0
+            remove_paths_indices = []
+            for path in paths: # Check if the paths at any index is inside any of the grounding hazards
+                break_step_in_path_loop = False
+                for k in range(np.shape(path)[1]//round(path_shortening_divisor)):
+                    point = Point(path[1, k], path[0, k]) # Flipping of x and y (due to difference in seacharts and thecolavrepo's coordinate systems)
+                    if break_step_in_path_loop == True:
+                        break
+                    for hazard in self._grounding_hazard_disks_all_ships[obs_id].geoms:
+                        if hazard.contains(point):
+                            remove_paths_indices.append(path_count)
+                            break_step_in_path_loop = True
+                            break
+                path_count += 1
+            path_shortening_divisor *= 1.25
+
+        if remove_paths_indices:
+            if len(remove_paths_indices) < n_paths:
+                remaining_paths = np.delete(paths, remove_paths_indices, axis = 0)
+                remaining_paths_v = obstacle.get_mean_velocity_trajectories()
+                n_remaining_paths = np.shape(remaining_paths)[0]
+                if np.shape(paths_v)[0] != 0: # Only used by the MROU prediction scheme (LOS is used)
+                    remaining_paths_v = np.delete(paths_v, remove_paths_indices, axis = 0)
+                self._update_obstacle_properties(obstacle, obs_id, remaining_paths, remaining_paths_v, n_remaining_paths)
+            else: # If all paths are inside a grounding hazard (then paths cannot be removed)
+                self._update_obstacle_properties(obstacle, obs_id, paths, paths_v, n_paths)
+        else:
+            self._update_obstacle_properties(obstacle, obs_id, paths, paths_v, n_paths)
+        return
+    
+    def _update_obstacle_properties(self, obstacle: psbmpcI.TrackedObstacle, obs_id: int, paths: np.ndarray, paths_v: np.ndarray, n_paths: int) -> None:
+        """Updates the obstacle's properties. Keeps the obstacle's properties in the simulator and the C++ code consistent.
+
+        Args:
+            - obstacle (psbmpcI.TrackedObstacle): The obstacle to update the properties of.
+            - obs_id (int): The obstacle's ID.
+            - paths (np.ndarray): The obstacle's paths (positions).
+            - paths_v (np.ndarray): The obstacle's mean velocity paths.
+            - n_paths (int): The number of paths.
+        """
+        # Set to correct value
+        self._n_pred_obstacle[obs_id] = n_paths
+
+        print("id: ", obs_id, "n_paths: ", n_paths)
+
+        # Update paths (the other properties (set in this method) are set according to the paths)
+        if np.shape(paths)[0] != 0:
+            obstacle.set_trajectories(paths)
+        if np.shape(paths_v)[0] != 0: # Only used by the MROU prediction scheme (LOS is used)
+            obstacle.set_mean_velocity_trajectories(paths_v)
+        
+        # Set to correct length (temp uniform Prs, upd by IM)
+        scen_prob = np.ones(n_paths)
+        scen_prob = scen_prob/np.sum(scen_prob)
+        obstacle.set_scenario_probabilities(scen_prob)
+
+        # Set to correct value
+        i = 0
+        for obs in self._obstacles:
+            if obs.get_ID() == obs_id:
+                self._obstacle_predictor.set_n_ps_i(i, n_paths)
+                break
+            i += 1
+        return
 
     def get_current_plan(self) -> np.ndarray:
         refs = np.zeros((9, 1))

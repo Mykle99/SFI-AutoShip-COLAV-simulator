@@ -111,11 +111,6 @@ def from_dict(cls, data: dict) -> PSBMPCInterface.PSBMPCParams:
     psbmpcparams.set_par_bool(1, data["use_path_pruning_ownship"])
     psbmpcparams.set_par_bool(2, data["use_path_pruning_targetship"])
     psbmpcparams.set_par_bool(3, data["use_GPU"])
-    print("Inside here")
-    print('data["use_intention_model"]: ', data["use_intention_model"])
-    print('data["use_path_pruning_ownship"]: ', data["use_path_pruning_ownship"])
-    print('data["use_path_pruning_targetship"]:', data["use_path_pruning_targetship"])
-    print('data["use_GPU"]: ', data["use_GPU"])
     return psbmpcparams
 
 

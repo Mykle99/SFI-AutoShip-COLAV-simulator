@@ -23,9 +23,9 @@ if __name__ == "__main__":
     print("\nChose which test to perform by setting one of the bools to True (at the top of the script).\n")
     
     # PSBMPC (C++) test
-    test_psbmpc_manual = True
+    test_psbmpc_manual = False
     test_psbmpc_dict = False
-    test_psbmpc_from_yaml = False
+    test_psbmpc_from_yaml = True
 
     # SBMPC (C++) test
     test_sbmpc_cpp_manual = False
@@ -67,6 +67,8 @@ if __name__ == "__main__":
         ) # colav_config.layer1.psbmpc.ownshipparams.set_par_int(1, n_do_ps) can be used to set a desired n_do_ps
 
         colav_config.layer1.psbmpc.cpeparams = psbmpcI.CPE(cpe_ce)
+        colav_config.layer1.psbmpc.psbmpcparams.set_par_bool(0, True) # use Intention Model (default is False)
+        colav_config.layer1.psbmpc.psbmpcparams.set_par_bool(2, True) # use path pruning on targetship trajectories (default is False)
 
         # layer 2
         colav_config.layer2.im = imI.IMParams.default_parameters(num_ships)
@@ -133,7 +135,11 @@ if __name__ == "__main__":
             "chi_offsets" : [np.array([-60.0, -45.0, -30.0, -15.0, -10.0, -5.0, 0.0, 5.0, 10.0, 15.0, 30.0, 45.0, 60.0])],
             "CPE_method" : cpe_method,
             "prediction_method" : psbmpcI.PredictionMethod.ERK1,
-            "guidance_method" : psbmpcI.GuidanceMethod.LOS
+            "guidance_method" : psbmpcI.GuidanceMethod.LOS,
+            "use_intention_model" : True,
+            "use_path_pruning_ownship" : False,
+            "use_path_pruning_targetship" : True,
+            "use_GPU" : False # Note: Not implemented yet!
         }
 
         ownship_params = {

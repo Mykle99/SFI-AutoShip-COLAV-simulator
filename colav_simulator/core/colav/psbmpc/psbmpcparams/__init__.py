@@ -39,7 +39,11 @@ def to_dict(self) -> dict:
         "chi_offsets" : self.get_par_vector(1),
         "CPE_method" : self.get_cpe_method(),
         "prediction_method" : self.get_prediction_method(),
-        "guidance_method" : self.get_guidance_method()
+        "guidance_method" : self.get_guidance_method(),
+        "use_intention_model" : self.get_par_bool(0),
+        "use_path_pruning_ownship" : self.get_par_bool(1),
+        "use_path_pruning_targetship" : self.get_par_bool(2),
+        "use_GPU" : self.get_par_bool(3)
     }
     return output
 
@@ -103,6 +107,15 @@ def from_dict(cls, data: dict) -> PSBMPCInterface.PSBMPCParams:
     psbmpcparams.set_cpe_method(data["CPE_method"])
     psbmpcparams.set_prediction_method(data["prediction_method"])
     psbmpcparams.set_guidance_method(data["guidance_method"])
+    psbmpcparams.set_par_bool(0, data["use_intention_model"])
+    psbmpcparams.set_par_bool(1, data["use_path_pruning_ownship"])
+    psbmpcparams.set_par_bool(2, data["use_path_pruning_targetship"])
+    psbmpcparams.set_par_bool(3, data["use_GPU"])
+    print("Inside here")
+    print('data["use_intention_model"]: ', data["use_intention_model"])
+    print('data["use_path_pruning_ownship"]: ', data["use_path_pruning_ownship"])
+    print('data["use_path_pruning_targetship"]:', data["use_path_pruning_targetship"])
+    print('data["use_GPU"]: ', data["use_GPU"])
     return psbmpcparams
 
 

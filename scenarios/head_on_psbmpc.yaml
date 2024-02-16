@@ -53,6 +53,10 @@ ship_list:
             CPE_method: "CE" # CE or MCSKF4D
             prediction_method: "ERK1" # ERK1 or Linear
             guidance_method: "LOS" # LOS, WPP or CH
+            use_intention_model : False
+            use_path_pruning_ownship : False
+            use_path_pruning_targetship : False
+            use_GPU : False # Note: Not implemented yet! Must be set to False.
           psbmpc_ownship_params:
             length: 5.0
             width: 3.0

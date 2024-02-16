@@ -710,13 +710,13 @@ class PSBMPCWrapper(ICOLAV):
         self._grounding_hazards_in_enc = None
         self._relevant_grounding_hazards = None
         self._new_static_obstacle_data = True
-        self._prune_obstacle_paths = True
         self._grounding_hazard_disks_all_ships = {}
         self._did_grounding_hazard_disks_all_ships_exist = {}
         self._n_pred_obstacle = {}
 
-        self._period_im = 2.5
         self._period_psbmpc = 1.5
+        self._use_im = self._psbmpc_params.get_par_bool(0)
+        self._use_path_pruning_targetship = self._psbmpc_params.get_par_bool(2)
 
     def plan(
         self,
@@ -749,7 +749,7 @@ class PSBMPCWrapper(ICOLAV):
             self._new_static_obstacle_data = True
 
         # Update obstacle everytime either the IM or the PSBMPC runs
-        if ((t - self._t_run_psbmpc_last >= self._period_psbmpc) or (t - self._t_run_im_last >= self._period_im)):    
+        if (t - self._t_run_psbmpc_last >= self._period_psbmpc): 
             # Format data to be compatible with IM
             # Making pairs of OS (0) and TS (1) for the IM, hence only 0 and 1 are needed for the mmsi_list 
             mmsi_list = imI.IM.IntVector()
@@ -797,23 +797,29 @@ class PSBMPCWrapper(ICOLAV):
                         )
                         in_tracked_obstacles = True
                         break
-                if not in_tracked_obstacles:
-                    self._obstacles.append(
-                        psbmpcI.TrackedObstacle(obs_aug_state, obs_covar, False, self._obs_pred_hor_T, self._obs_pred_dt)
-                    )
-                    self._did_intention_inference_run[obs_id] = False
-                    
+
                 # d_do_relevant > the estimated distance between the OS and the given TS
-                if self._psbmpc_params.get_par_double(4) > math.sqrt((ownship_state[0] - do_ship_state[0])**2 + (ownship_state[1] - do_ship_state[1])**2):
-                    do_ship_state_cor = [do_ship_state[1], do_ship_state[0]] 
-                    self._grounding_hazard_disks_all_ships[obs_id] = map_functions.extract_grounding_hazards_method_from_GPU_paper(
-                        self._grounding_hazards_in_enc, self._radius_of_coverage, do_ship_state_cor 
-                    )
+                if ((self._psbmpc_params.get_par_double(4) > math.sqrt((ownship_state[0] - do_ship_state[0])**2 + (ownship_state[1] - do_ship_state[1])**2))):
+                    self._n_pred_obstacle[obs_id] = self._psbmpc_params.get_par_int(1)
+                    if (self._use_path_pruning_targetship):
+                        do_ship_state_cor = [do_ship_state[1], do_ship_state[0]] 
+                        self._grounding_hazard_disks_all_ships[obs_id] = map_functions.extract_grounding_hazards_method_from_GPU_paper(
+                            self._grounding_hazards_in_enc, self._radius_of_coverage, do_ship_state_cor 
+                        )        
                 else:
                     if obs_id in self._grounding_hazard_disks_all_ships:
                         self._grounding_hazard_disks_all_ships.pop(obs_id)
+                    self._n_pred_obstacle[obs_id] = 1
+                
+                # Add dynamic obstacle if not added before
+                if not in_tracked_obstacles:
+                    self._obs_pred_scen_Prob[obs_id] = np.ones(self._n_pred_obstacle[obs_id])
+                    self._obs_pred_scen_Prob[obs_id] = self._obs_pred_scen_Prob[obs_id]/np.sum(self._obs_pred_scen_Prob[obs_id])
+                    self._obstacles.append(
+                        psbmpcI.TrackedObstacle(obs_aug_state, obs_covar, self._obs_pred_scen_Prob[obs_id], False, self._obs_pred_hor_T, self._obs_pred_dt)
+                    )
+                    self._did_intention_inference_run[obs_id] = False 
         
-            # Predict paths for the obstacles
             self._obstacles = self._obstacle_predictor(
                 self._obstacles, 
                 os_PSBMPC, 
@@ -822,12 +828,13 @@ class PSBMPCWrapper(ICOLAV):
             )
 
         # Intention Model
-        if t - self._t_run_im_last >= self._period_im:
-            self._t_run_im_last = t
+        if (t - self._t_run_psbmpc_last >= self._period_psbmpc and self._use_im):
             # Prune the obstacle's paths
             # Executed as often as the IM is (to get updated Prs for each path, old Prs for old paths are not applicable to new paths)
-            if self._prune_obstacle_paths:
+            if self._use_path_pruning_targetship: 
                 for obs_id in self._grounding_hazard_disks_all_ships:
+                    if self._grounding_hazard_disks_all_ships[obs_id].is_empty: # Only prune if there is static obstacles nearby
+                        continue
                     for obstacle in self._obstacles:
                         if obstacle.get_ID() == obs_id:
                             self.prune_obstacle_paths(obstacle)
@@ -929,7 +936,7 @@ class PSBMPCWrapper(ICOLAV):
                                         self._obs_pred_scen_Prob[ship_id] = np.ones(self._n_pred_obstacle[ship_id])
                                         self._obs_pred_scen_Prob[ship_id] = self._obs_pred_scen_Prob[ship_id]/np.sum(self._obs_pred_scen_Prob[ship_id])
                                     obstacle_j.set_scenario_probabilities(self._obs_pred_scen_Prob[ship_id])
-                                    print(f"Pr_s^DO{ship_id - 1} set to {self._obs_pred_scen_Prob[ship_id]}")
+                                    #print(f"Pr_s^DO{ship_id - 1} set to {self._obs_pred_scen_Prob[ship_id]}")
                                     break
                     else:
                         for obstacle_k in self._obstacles:
@@ -944,7 +951,7 @@ class PSBMPCWrapper(ICOLAV):
         self._t_prev = t
         course_ref = references[2, 0]
         speed_ref = references[3, 0]
-        if t - self._t_run_psbmpc_last >= self._period_psbmpc:
+        if (t - self._t_run_psbmpc_last >= self._period_psbmpc):
             if t - self._t_upd_static_obstacle_last >= self._period_psbmpc:
                 ownship_state_cor = [ownship_state[1], ownship_state[0], math.degrees(ownship_state[2])]
                 rel_grounding_hazards = map_functions.extract_grounding_hazards_from_relevant_sector_in_enc(
@@ -1031,8 +1038,6 @@ class PSBMPCWrapper(ICOLAV):
         """
         # Set to correct value
         self._n_pred_obstacle[obs_id] = n_paths
-
-        print("id: ", obs_id, "n_paths: ", n_paths)
 
         # Update paths (the other properties (set in this method) are set according to the paths)
         if np.shape(paths)[0] != 0:

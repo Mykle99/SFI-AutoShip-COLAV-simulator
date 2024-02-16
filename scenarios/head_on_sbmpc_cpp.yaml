@@ -18,7 +18,7 @@ ship_list:
     id: 0
     mmsi: 100
     colav:
-      name: "SBMPC_CPP" # must be exactly "PSBMPC_CPP" to avoid pickle errors in scenario_managment.py
+      name: "SBMPC_CPP" # must be exactly "SBMPC_CPP" to avoid pickle errors in scenario_managment.py
       layer1:
         sbmpc_cpp:
           sbmpc_params: 
@@ -72,7 +72,7 @@ ship_list:
           sbmpc_targetship_params:
             r_ct : 20
             path_prediction_shape: "SMOOTH" # SMOOTH or LINEAR
-            chi_offsets: [-60, -30, 0, 30, 60] # Number of elements in chi_offsets must equal n_do_ps in psbmpc_params (in degrees)
+            chi_offsets: [-60, -30, 0, 30, 60] # Number of elements in chi_offsets must equal n_do_ps in sbmpc_params (in degrees)
       layer2:
         los:
           pass_angle_threshold: 90.0

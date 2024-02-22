@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 import seacharts.enc as senc
 from colav_simulator.core.ship import Ship
+from copy import deepcopy
 
 np.set_printoptions(suppress=True, formatter={"float_kind": "{:.4f}".format})
 
@@ -174,6 +175,8 @@ class Simulator:
                 if self._config.verbose:
                     print(f"\rSimulator: Running scenario episode nr {ep + 1}: {scenario_episode_file}...")
                 sim_data, ship_info, sim_times = self.run_scenario_episode()
+                print(len(sim_data))
+                print(sim_data.iloc[0,0])
                 if self._config.verbose:
                     print(
                         f"\rSimulator: Finished running through scenario episode nr {ep + 1}: {scenario_episode_file}."
@@ -300,17 +303,16 @@ class Simulator:
             relevant_true_do_states = mhm.get_relevant_do_states(true_do_states, i)
             tracks, sensor_measurements_i = ship_obj.track_obstacles(self.t, self.dt, relevant_true_do_states)
 
-            self.recent_sensor_measurements[i] = extract_valid_sensor_measurements(
-                self.t, self.recent_sensor_measurements[i], sensor_measurements_i
-            )
+            # self.recent_sensor_measurements[i] = extract_valid_sensor_measurements(
+                # self.t, self.recent_sensor_measurements[i], sensor_measurements_i
+            # )
 
             # Plans a decision for the ship depending on its configuration
             if ship_obj.t_start <= self.t:
                 if not (i == 0 and remote_actor):  # Skip own-ship planning step if controlled by remote actor
                     ship_obj.plan(t=self.t, dt=self.dt, do_list=tracks, enc=self.enc, w=disturbance_data)
-
             sim_data_dict[f"Ship{i}"] = ship_obj.get_sim_data(self.t, self.timestamp_start)
-            sim_data_dict[f"Ship{i}"]["sensor_measurements"] = self.recent_sensor_measurements[i]
+            sim_data_dict[f"Ship{i}"]["sensor_measurements"] = sensor_measurements_i
             sim_data_dict[f"Ship{i}"]["colav"] = ship_obj.get_colav_data()
 
             if ship_obj.t_start <= self.t:

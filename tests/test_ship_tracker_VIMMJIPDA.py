@@ -63,10 +63,20 @@ if __name__ == "__main__":
     # for el in output[0]['episode_simdata_list'][0]['sim_data'].iloc[0,1]:
     #     print(el)
     #     print(output[0]['episode_simdata_list'][0]['sim_data'].iloc[0,1][el], "\n")
-    # print(output[0]['episode_simdata_list'][0]['sim_data'].iloc[799,0]) # print row 0 for ship_0
+    # print(output[0]['episode_simdata_list'][0]['sim_data'].iloc[0,0]['sensor_measurements']) # print row 0 for ship_0
     
     
+    # test = output[0]['episode_simdata_list'][0]['sim_data'].iloc[150,1]['sensor_measurements']
+    # test2 = output[0]['episode_simdata_list'][0]['sim_data'].iloc[151,1]['sensor_measurements']
+    # test3 = output[0]['episode_simdata_list'][0]['sim_data'].iloc[152,1]['sensor_measurements']
+    # test4 = output[0]['episode_simdata_list'][0]['sim_data'].iloc[153,1]['sensor_measurements']
+    # print(" t = i : ", test,", t = i+1 : " , test2, ", t = i+2 : ", test3, ", t = i+3", test4)
     
+    # for i in range(400):
+        # print(len(output[0]['episode_simdata_list'][0]['sim_data'].iloc[i,1]['sensor_measurements']))
+
+    
+
     # print(output[0]['episode_simdata_list'][0]['ship_info']['Ship0'])  #For printing Ship_info
 
     

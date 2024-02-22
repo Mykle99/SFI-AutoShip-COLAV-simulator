@@ -46,8 +46,8 @@ class RadarParams:
     R_true: np.ndarray = field(
         default_factory=lambda: np.diag([5.0**2, 5.0**2])
     )  # meas cov that reflects the true noise characteristics. Used to generate measurements
-    clutter_cardinality_expectation: int = 5
     generate_clutter: bool = field(default_factory=lambda: False)
+    clutter_cardinality_expectation: int = 5
 
     @classmethod
     def from_dict(self, config_dict: dict):
@@ -56,8 +56,8 @@ class RadarParams:
             measurement_rate=config_dict["measurement_rate"],
             R=np.diag(config_dict["R"]),
             R_true=np.diag(config_dict["R_true"]),
-            clutter_cardinality_expectation=config_dict["clutter_cardinality_expectation"],
             generate_clutter=config_dict["generate_clutter"],
+            clutter_cardinality_expectation=config_dict["clutter_cardinality_expectation"],
         )
 
     def to_dict(self) -> dict:

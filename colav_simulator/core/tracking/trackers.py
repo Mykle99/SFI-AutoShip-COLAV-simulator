@@ -486,7 +486,6 @@ class VIMMJIPDA(ITracker):
             elif do_idx in self._labels:
                 self._track_initialized[self._labels.index(do_idx)] = True #Set the target as initialized
 
-        # print(self._params)
 
         
         sensor_measurements = []

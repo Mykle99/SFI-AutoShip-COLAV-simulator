@@ -329,6 +329,7 @@ if __name__ == "__main__":
     elif test_psbmpc_from_yaml:
         
         print("Running the PSBMPC yaml test.\n")
+        # Should be scenario_generator.yaml and not simulator??? 
         print("head_on_psbmpc.yaml in the scenarios folder can be used "
             "with this test. The file can be chosen in the simulator.yaml file "
             "in the config folder. (In simulator.yaml; set simulator: "

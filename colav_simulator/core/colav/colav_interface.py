@@ -75,7 +75,7 @@ class LayerConfig:
     vo: Optional[kvo.VOParams] = field(default_factory=lambda: kvo.VOParams())
     los: Optional[guidance.LOSGuidanceParams] = None
     sbmpc: Optional[sb_mpc.SBMPCParams] = None
-    im: Optional[imI.IMParams.IntentionModelParameters] = None
+    im: Optional[imI.IMParamsWrapper] = None
     psbmpc: Optional[psbmpcI.PSBMPCParamsWrapper] = None
     sbmpc_cpp : Optional[psbmpcI.SBMPCParamsWrapper] = None
 
@@ -92,7 +92,7 @@ class LayerConfig:
             config.sbmpc = cp.convert_settings_dict_to_dataclass(sb_mpc.SBMPCParams, config_dict["sbmpc"])
 
         if "im" in config_dict:
-            config.im = cp.convert_settings_dict_to_paramsclass(imI.IMParams.IntentionModelParameters, config_dict["im"])
+            config.im = cp.convert_settings_dict_to_paramsclass(imI.IMParamsWrapper, config_dict["im"])
 
         if "psbmpc" in config_dict:
             config.psbmpc = cp.convert_settings_dict_to_paramsclass(psbmpcI.PSBMPCParamsWrapper, config_dict["psbmpc"])
@@ -583,8 +583,8 @@ class IMWrapper(ICOLAV):
                         self.ship_intentions[ship_id].save_intention_predictions_to_file(self.intention_prediction_file,\
                                                                                             x, y, t)
                     else:
-                        dist = imI.IMGeometry.evaluateDistance(ship_states[ship_id][imI.IMGeometry.PX] - ship_states[os_id][imI.IMGeometry.PX],\
-                                                        ship_states[ship_id][imI.IMGeometry.PY] - ship_states[os_id][imI.IMGeometry.PY])
+                        dist = imI.Geometry.evaluateDistance(ship_states[ship_id][imI.Geometry.PX] - ship_states[os_id][imI.Geometry.PX],\
+                                                        ship_states[ship_id][imI.Geometry.PY] - ship_states[os_id][imI.Geometry.PY])
 
                         own_ship_sog = ship_states[os_id][3]
                         if  ((dist < self.parameters.starting_distance) \
@@ -844,9 +844,9 @@ class PSBMPCWrapper(ICOLAV):
             for do in do_list:
                 ship_id = do[0]
                 if ship_id != os_id:
-                    dist = imI.IMGeometry.evaluateDistance(
-                            ship_states_dict[ship_id][1][imI.IMGeometry.PX] - ship_states[os_id][imI.IMGeometry.PX], 
-                            ship_states_dict[ship_id][1][imI.IMGeometry.PY] - ship_states[os_id][imI.IMGeometry.PY]
+                    dist = imI.Geometry.evaluateDistance(
+                            ship_states_dict[ship_id][1][imI.Geometry.PX] - ship_states[os_id][imI.Geometry.PX], 
+                            ship_states_dict[ship_id][1][imI.Geometry.PY] - ship_states[os_id][imI.Geometry.PY]
                     )
                     own_ship_sog = ship_states[os_id][3]
                     if ((dist < self._im_params.starting_distance) and (own_ship_sog > 0.1) and (self._did_intention_inference_run[ship_id] == False)): # init, should start running)

@@ -1,8 +1,18 @@
 from colav_simulator.core.colav.im import IMInterface
+from dataclasses import dataclass
 
 
 
-# Monkey patch of to_dict() and from_dict() for the im_params class
+@dataclass
+class IMParamsWrapper:
+    """Parameter wrapper class for the IMParams."""
+
+
+# Monkey patching IMParamsWrapper class to the IMInterface Python module
+IMInterface.IMParamsWrapper = IMParamsWrapper
+
+
+# Monkey patch of to_dict() and from_dict() for the IMParamsWrapper class
 def to_dict(self) -> dict:
     expanding_dbn = {
         "min_time_s" : self.expanding_dbn.min_time_s,
@@ -117,7 +127,7 @@ def to_dict(self) -> dict:
     return output
 
 @classmethod
-def from_dict(cls, data: dict) -> IMInterface.IMParams.IntentionModelParameters:
+def from_dict(cls, data: dict) -> IMInterface.IMParamsWrapper:
     num_ships = data["max_number_of_obstacles"] + 1
     imparams = IMInterface.IMParams.default_parameters(num_ships) # currently only 2 as input works
     imparams.number_of_network_evaluation_samples = data["number_of_network_evaluation_samples"]
@@ -180,5 +190,5 @@ def from_dict(cls, data: dict) -> IMInterface.IMParams.IntentionModelParameters:
 
 
 # Monkey patching to_dict() and from_dict() to the im_params class
-IMInterface.IMParams.IntentionModelParameters.to_dict = to_dict
-IMInterface.IMParams.IntentionModelParameters.from_dict = from_dict
+IMInterface.IMParamsWrapper.to_dict = to_dict
+IMInterface.IMParamsWrapper.from_dict = from_dict

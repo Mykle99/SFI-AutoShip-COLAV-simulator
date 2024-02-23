@@ -9,7 +9,7 @@ manual_episode_accept: False
 #scenario_files: ["anti-grounding_study.yaml"]
 #scenario_files: ["anti-grounding_stress_test.yaml"]
 #scenario_files: ["head_on_sbmpc.yaml"]
-scenario_files: ["head_on_psbmpc.yaml"]
+#scenario_files: ["head_on_psbmpc.yaml"]
 #scenario_files: ["test_path_pruning.yaml"]
 #scenario_files: ["head_on_multi_ship_psbmpc.yaml"]
 #scenario_files: ["head_on_sbmpc_cpp.yaml"]
@@ -21,7 +21,11 @@ scenario_files: ["head_on_psbmpc.yaml"]
 #scenario_files: ["simple_planning_example.yaml"]
 #scenario_files: ["saved/aalesund_random2_18012023_13_48_46.yaml"]
 #scenario_files: ["saved/aalesund_random_20012023_13_00_55.yaml"]
-scenario_files: ["overtaking.yaml"]
+#scenario_files: ["overtaking.yaml"]
+#scenario_files: ["psb_mtt_test/crossing_give_way.yaml"]
+#scenario_files: ["psb_mtt_test/crossing_stand_on.yaml"]
+scenario_files: ["psb_mtt_test/head_on.yaml"]
+#scenario_files: ["psb_mtt_test/overtaking.yaml"]
 #scenario_folder: "imazu_cases"
 
 

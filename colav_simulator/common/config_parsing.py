@@ -145,6 +145,30 @@ def parse(file_name: Path, schema: dict, section: Optional[str] = None) -> dict:
     return section_settings
 
 
+def parse_yaml_to_dict(config: Path, schema: Path, section: Optional[str] = None) -> dict:
+    """Parses a configuration file into a dictionary, and validates the settings.
+
+    Args:
+        config (Path): Path to the configuration file.
+        schema (Path): Configuration schema to validate the settings against.
+        section (Optional[str]): Main section to parse. Defaults to None.
+
+    Returns:
+        dict: Configuration settings.
+    """
+    settings = futils.read_yaml_into_dict(config)
+    schema = futils.read_yaml_into_dict(schema)
+
+    section_settings = settings
+    section_schema = schema
+    if section:
+        section_settings = settings[section]
+        section_schema = schema[section]
+
+    validate(section_settings, section_schema)
+    return section_settings
+
+
 def override(settings: dict, schema: dict, section: Optional[str] = None, **kwargs) -> dict:
     """Overrides settings with keyword arguments, and validates the new values.
 

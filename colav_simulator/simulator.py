@@ -176,7 +176,7 @@ class Simulator:
                 if colav_systems is not None:
                     for ship_id, _ in colav_systems:
                         for _, ship_obj in enumerate(self.ship_list):
-                            if ship_obj.id == ship_id and type(ship_obj._colav) == ci.PSBMPCWrapper:
+                            if ship_obj.id == ship_id and type(ship_obj._colav) == "PSBMPC":
                                 ship_obj._colav._psbmpc_cpe.set_seed(ep) # This sets the seed for the OS's and TSs' ((with PSBMPC colav) CPE's PRNG
 
                 if self._config.verbose:

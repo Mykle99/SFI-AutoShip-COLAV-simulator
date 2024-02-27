@@ -1,0 +1,244 @@
+name: "head_on_psbmpc_mtt"
+save_scenario: False
+t_start: 0.0
+t_end: 300.0
+dt_sim: 0.1
+utm_zone: 33
+map_size: [5000.0, 5000.0]
+map_origin_enu: [38000.0, 6956000.0]
+map_data_files: ["More_og_Romsdal_utm33.gdb"]
+new_load_of_map_data: True
+n_episodes: 1
+type: HO
+n_random_ships: 1
+ship_list:
+  - csog_state: [6957500.0, 39500.0, 7.0, 45.0]
+    waypoints: [[6957500.0, 6959500.0], [39500.0, 41500.0]]
+    speed_plan: [7.0, 7.0]
+    id: 0
+    mmsi: 100
+    colav:
+      name: "PSBMPC" # must be exactly "PSBMPC" to avoid pickle errors in scenario_managment.py
+      layer1:
+        psbmpc:
+          psbmpc_params: 
+            n_M: 1
+            n_do_ps: 5
+            p_step_opt: 10
+            p_step_do: 2
+            p_step_grounding: 4
+            T: 120
+            dt: 1.0
+            t_ts: 60
+            d_safe: 4.5
+            d_do_relevant: 500
+            d_so_relevant: 150
+            K_coll: 25
+            T_coll: 100
+            kappa_SO: 20
+            kappa_GW: 25
+            kappa_RA: 15
+            K_u: 6.3
+            K_du: 3.6
+            K_chi: 1.8
+            K_dchi: 1.3
+            K_e: 0.0005
+            G_1: 100.0
+            G_2: 5.0
+            G_3: 1.4
+            G_4: 1.0
+            epsilon_rdp: 2.0
+            u_offsets: [1.0, 0.5, 0.0]
+            chi_offsets: [-60.0, -45.0, -30.0, -15.0, -10.0, -5.0, 0.0, 5.0, 10.0, 15.0, 30.0, 45.0, 60.0]
+            CPE_method: "CE" # CE or MCSKF4D
+            prediction_method: "ERK1" # ERK1 or Linear
+            guidance_method: "LOS" # LOS, WPP or CH
+            use_intention_model : False
+            use_path_pruning_ownship : False
+            use_path_pruning_targetship : False
+            use_GPU : False # Note: Not implemented yet! Must be set to False.
+          psbmpc_ownship_params:
+            length: 5.0
+            width: 3.0
+            T_U: 1.44
+            T_chi: 0.92
+            R_a: 5.0
+            LOS_LD: 66.0
+            LOS_K_i: 0.0
+            active_waypoint: 0
+            path_prediction_shape: "SMOOTH" # SMOOTH or LINEAR
+          psbmpc_targetship_params:
+            r_ct : 20
+            path_prediction_shape: "SMOOTH" # SMOOTH or LINEAR
+            chi_offsets: [-60, -30, 0, 30, 60] # Number of elements in chi_offsets must equal n_do_ps in psbmpc_params
+          psbmpc_cpe_params:
+            CPE_method: "CE" # CE or MCSKF4D
+            n_CE: 500
+            n_MCSKF: 500
+            alpha_n: 0.9
+            gate: 11.618285980628054
+            rho: 0.9
+            max_it: 6
+            q: 0.0008
+            r: 0.001
+      layer2:
+        im:
+          number_of_network_evaluation_samples: 100000
+          max_number_of_obstacles: 1
+          time_into_trajectory: 0
+          starting_distance: 10000
+          starting_cpa_distance: 15000
+          expanding_dbn:
+            min_time_s: 20
+            max_time_s: 300
+            min_course_change_rad: 0.2617994
+            min_speed_change_m_s: 1.5
+          ample_time_s:
+            mu: 200
+            sigma: 100
+            max: 1000
+            n_bins: 30
+            minimal_accepted_by_ownship: 20
+          safe_distance_m:
+            mu: 200
+            sigma: 30
+            max: 800
+            n_bins: 30
+          risk_distance_m:
+            mu: 1500
+            sigma: 250
+            max: 2500
+            n_bins: 30
+          risk_distance_front_m:
+            mu: 1500
+            sigma: 250
+            max: 2500
+            n_bins: 30
+          safe_distance_midpoint_m:
+            mu: 600
+            sigma: 20
+            max: 2500
+            n_bins: 30
+          safe_distance_front_m:
+            mu: 100
+            sigma: 50
+            max: 1000
+            n_bins: 30
+          change_in_course_rad:
+            minimal_change_since_init_state: 0.2617994
+            minimal_change_since_last_state: 0.06
+          change_in_speed_m_s:
+            minimal_change: 1.5
+          colregs_situation_borders_rad:
+            HO_uncertainty_start: 2.79
+            HO_start: 2.96
+            HO_stop: -2.96
+            HO_uncertainty_stop: -2.79
+            OT_uncertainty_start: 1.74
+            OT_start: 2.18
+            OT_stop: -2.18
+            OT_uncertainty_stop: -1.74
+          set_startpoint:
+            min_time_cpa: 60
+          time_step_removal:
+            min_timesteps_in_state_history: 7
+            unmodeled_behaviour_threshold: 0.1
+            time_cpa_threshold: 50
+          ignoring_safety_probability: 0
+          colregs_compliance_probability: 0.99
+          good_seamanship_probability: 0.99
+          unmodeled_behaviour: 0.00001
+          priority_probability:
+            lower: 0.05
+            similar: 0.90
+            higher: 0.05
+      layer3:
+        los:
+          pass_angle_threshold: 90.0
+          R_a: 25.0
+          K_p: 0.015
+          K_i: 0.0
+          max_cross_track_error_int: 200.0
+          cross_track_error_int_threshold: 50.0
+    tracker:
+      VIMMJIPDA:
+        IMM_off: True
+        single_target: False
+        visibility_off: True
+      #kf:
+      #  P_0: [49.1, 49.1, 0.11, 0.11]
+      #  q: 0.15
+      #god_tracker: ""
+    sensors:
+      - radar:
+          max_range: 2000.0
+          measurement_rate: 0.5
+          R: [25.0, 25.0]
+          R_true: [25.0, 25.0]
+      #- ais:
+      #    max_range: 5000.0
+      #    ais_class: A
+      #    R: [26.3, 26.3, 0.1, 0.1]
+      #    R_true: [26.3, 26.3, 0.1, 0.1]
+    # guidance:
+      # los:
+        # pass_angle_threshold: 90.0
+        # R_a: 75.0
+        # K_p: 0.015
+        # K_i: 0.0
+        # max_cross_track_error_int: 200.0
+        # cross_track_error_int_threshold: 30.0
+    controller:
+      flsh:
+        K_p_u: 3.0
+        K_i_u: 0.1
+        K_p_psi: 3.0
+        K_d_psi: 1.75
+        K_i_psi: 0.003
+        max_speed_error_int: 2.0
+        speed_error_int_threshold: 1.0
+        max_psi_error_int: 50.0
+        psi_error_int_threshold: 15.0
+    model:
+      telemetron: ''
+  - csog_state: [6959500.0, 41500.0, 7.0, 225.0]
+    waypoints: [[6959500.0, 6957500.0], [41500.0, 39500.0]]
+    speed_plan: [7.0, 7.0]
+    id: 1
+    mmsi: 101
+    tracker:
+      kf:
+        P_0: [49.1, 49.1, 0.11, 0.11]
+        q: 0.15
+    sensors:
+      - radar:
+          max_range: 2000.0
+          measurement_rate: 0.5
+          R: [25.0, 25.0]
+          R_true: [25.0, 25.0]
+      - ais:
+          max_range: 5000.0
+          ais_class: A
+          R: [26.3, 26.3, 0.1, 0.1]
+          R_true: [26.3, 26.3, 0.1, 0.1]
+    guidance:
+      los:
+        pass_angle_threshold: 90.0
+        R_a: 75.0
+        K_p: 0.015
+        K_i: 0.0
+        max_cross_track_error_int: 200.0
+        cross_track_error_int_threshold: 30.0
+    controller:
+      flsh:
+        K_p_u: 3.0
+        K_i_u: 0.1
+        K_p_psi: 3.0
+        K_d_psi: 1.75
+        K_i_psi: 0.003
+        max_speed_error_int: 2.0
+        speed_error_int_threshold: 1.0
+        max_psi_error_int: 50.0
+        psi_error_int_threshold: 15.0
+    model:
+      telemetron: ''

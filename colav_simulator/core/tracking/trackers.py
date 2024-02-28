@@ -287,12 +287,6 @@ class KF(ITracker):
 
                 if sensor_measurements: #always enter this if sentence
                     for sensor_id in range(len(self.sensors)):
-                        print(t)
-                        print(sensor_measurements)
-                        print("len(sensors)",len(self.sensors))
-                        print("i",i)
-                        print("len(sensor_measurements)", len(sensor_measurements))
-                        print("len(sensor_measurements[sensor_id])", len(sensor_measurements[sensor_id]))
                         z = sensor_measurements[sensor_id][i]
                         self._xs_upd[i], self._P_upd[i], NIS_i = self.update(
                             self._xs_upd[i], self._P_upd[i], z, sensor_id

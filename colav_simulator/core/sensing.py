@@ -191,7 +191,7 @@ class Radar(ISensor):
             self._prev_meas_time = t
             if self._params.generate_clutter:
                 z_clutter = self.generate_clutter(t, ownship_state)
-                measurements.append(z_clutter)
+                measurements.extend(z_clutter)
         else:
             for i, (_, xs, length, width) in enumerate(true_do_states):
                 z = np.nan * np.ones(2)
@@ -208,7 +208,7 @@ class Radar(ISensor):
             y = r * np.sin(theta) + ownship_state[1]
             # print(cardinality, type(cardinality))
             for i in range(cardinality[0]):
-                clutter.append([x[i],y[i]])
+                clutter.append(np.array([x[i],y[i]]))
             return clutter
         return
 

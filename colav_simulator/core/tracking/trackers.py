@@ -285,8 +285,14 @@ class KF(ITracker):
                 self._xs_upd[i] = self._xs_p[i]
                 self._P_upd[i] = self._P_p[i]
 
-                if sensor_measurements:
+                if sensor_measurements: #always enter this if sentence
                     for sensor_id in range(len(self.sensors)):
+                        print(t)
+                        print(sensor_measurements)
+                        print("len(sensors)",len(self.sensors))
+                        print("i",i)
+                        print("len(sensor_measurements)", len(sensor_measurements))
+                        print("len(sensor_measurements[sensor_id])", len(sensor_measurements[sensor_id]))
                         z = sensor_measurements[sensor_id][i]
                         self._xs_upd[i], self._P_upd[i], NIS_i = self.update(
                             self._xs_upd[i], self._P_upd[i], z, sensor_id
@@ -495,7 +501,8 @@ class VIMMJIPDA(ITracker):
                 # print("z = : ", z , "type: ", type(z))
                 sensor_measurements.append(z)
                 meas_covariance_NE = sensor._params.R
-                clutter = sensor.generate_clutter(t, ownship_state)
+        if t%10==0:
+            print("t:", t, " meas: ", sensor_measurements)
                 # print("clutter = : ", clutter , "type: ", type(clutter))
                 # print(sensor._params.to_dict())
         # meas_covariance_NE[0][0] = 10 # To see that the covariance comes out correct
@@ -554,7 +561,7 @@ class VIMMJIPDA(ITracker):
             # Loop through all DO
             if isinstance(sensor, Radar):
                 for i, (_, xs, length, width) in enumerate(true_do_states):
-                    if ((t - sensor._prev_meas_time[i]) % (1 / sensor._params.measurement_rate) == 0):
+                    if ((t - sensor._prev_meas_time) % (1 / sensor._params.measurement_rate) == 0):
                         new_meas = True
             
         # Run the VIMMJIPDA Tracker at the same rate as sensor measurement rates

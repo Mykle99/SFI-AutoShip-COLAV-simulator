@@ -26,6 +26,7 @@ if __name__ == "__main__":
     #scenario_file = dp.scenarios / "psb_mtt_test/crossing_os_give_way.yaml"
     #scenario_file = dp.scenarios / "psb_mtt_test/maneuvering_target.yaml"
     #scenario_file = dp.scenarios / "psb_mtt_test/overtaking.yaml"
+    #scenario_file = dp.scenarios / "psb_mtt_test/overtaken.yaml"
     #scenario_file = dp.scenarios / "psb_mtt_test/simple_multi_target.yaml"
 
     sg_config = Config()

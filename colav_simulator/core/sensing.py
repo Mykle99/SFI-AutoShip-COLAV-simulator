@@ -190,7 +190,7 @@ class Radar(ISensor):
                 measurements.append(z)
             self._prev_meas_time = t
             if self._params.generate_clutter:
-                z_clutter = self.generate_clutter()
+                z_clutter = self.generate_clutter(t, ownship_state)
                 measurements.append(z_clutter)
         else:
             for i, (_, xs, length, width) in enumerate(true_do_states):

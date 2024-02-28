@@ -29,18 +29,14 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 from seacharts.enc import ENC
-from shapely.geometry import Point 
 
 import colav_simulator.common.config_parsing as cp
-import colav_simulator.common.map_functions as map_functions
 import colav_simulator.core.colav.kuwata_vo_alg.kuwata_vo as kvo
 import colav_simulator.core.guidances as guidance
+import colav_simulator.core.colav.sbmpc.sbmpc as sb_mpc
 import colav_simulator.core.stochasticity as stochasticity
-import colav_simulator.common.paths as dp
 import matplotlib.pyplot as plt
-import geopandas as gpd
 import numpy as np
-import math
 
 
 
@@ -49,9 +45,6 @@ class COLAVType(Enum):
 
     VO = 0        # Kuwata VO, with LOS guidance to provide velocity references.
     SBMPC = 1     # SB-MPC, provide trajectory offsets
-    IM = 2        # Ship Intention Inference Model
-    PSBMPC = 3    # Probabilistic SB-MPC
-    SBMPC_CPP = 4 # SB-MPC C++ implementation
 
 
 @dataclass
@@ -71,6 +64,7 @@ class LayerConfig:
 
     vo: Optional[kvo.VOParams] = field(default_factory=lambda: kvo.VOParams())
     los: Optional[guidance.LOSGuidanceParams] = None
+    sbmpc: Optional[sb_mpc.SBMPCParams] = None
 
     @classmethod
     def from_dict(cls, config_dict: dict):

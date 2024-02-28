@@ -2,7 +2,7 @@ verbose: True
 manual_episode_accept: False
 #scenario_files: ["head_on.yaml", "crossing_give_way.yaml", "crossing_stand_on.yaml", "overtaking.yaml", "overtaken.yaml"]
 #scenario_files: ["rl_scenario.yaml"]
-#scenario_files: ["head_on.yaml"]
+scenario_files: ["head_on.yaml"]
 #scenario_files: ["head_on_open.yaml"]
 #scenario_files: ["head_on_narrow.yaml"]
 #scenario_files: ["head_on_narrow_reversed.yaml"]
@@ -24,7 +24,7 @@ manual_episode_accept: False
 #scenario_files: ["overtaking.yaml"]
 #scenario_files: ["psb_mtt_test/crossing_give_way.yaml"]
 #scenario_files: ["psb_mtt_test/crossing_stand_on.yaml"]
-scenario_files: ["psb_mtt_test/head_on.yaml"]
+#scenario_files: ["psb_mtt_test/head_on.yaml"]
 #scenario_files: ["psb_mtt_test/overtaking.yaml"]
 #scenario_folder: "imazu_cases"
 

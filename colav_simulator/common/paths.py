@@ -16,7 +16,7 @@ output = root / "output"
 
 core = package / "core"
 colav = core / "colav"
-im = colav / "cpp_to_py_interfaces/external/ship_intention_inference/files/intention_models"
+im = pathlib.Path(__file__).parents[3] / "pybind_im_and_psbmpc/external/ship_intention_inference/files/intention_models"
 
 schemas = package / "schemas"
 simulator_schema = schemas / "simulator.yaml"

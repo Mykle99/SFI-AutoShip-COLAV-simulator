@@ -1220,7 +1220,7 @@ def extract_grounding_hazards_from_relevant_sector_in_enc(
         enc.add_vessels((0, int(ownship_x), int(ownship_y), int(ownship_cog), "black"))
         enc.draw_polygon(sector_triangle, color = "green", alpha = 0.5)
         enc.draw_polygon(circle_relevant_sector, color = "orange", alpha = 0.5)
-        enc.draw_circle([rel_sec_center.x, rel_sec_center.y], 30, "magenta", thickness = 4.5, fill = True)
+        enc.draw_cifiltered_relevant_hazards_circle_relevant_sector_intersectionrcle([rel_sec_center.x, rel_sec_center.y], 30, "magenta", thickness = 4.5, fill = True)
         enc.draw_polygon(filtered_relevant_hazards_circle_relevant_sector_intersection, color = "red", alpha = 0.6)
         enc.show_display()
 

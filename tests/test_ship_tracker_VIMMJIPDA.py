@@ -21,13 +21,13 @@ dpi_value = 150  # figure dpi value
 if __name__ == "__main__":
 
     #scenario_file = dp.scenarios / "VIMMJIPDA.yaml"
-    scenario_file = dp.scenarios / "psb_mtt_test/head_on.yaml"
+    #scenario_file = dp.scenarios / "psb_mtt_test/head_on.yaml"
     #scenario_file = dp.scenarios / "psb_mtt_test/crossing_do_give_way.yaml"
     #scenario_file = dp.scenarios / "psb_mtt_test/crossing_os_give_way.yaml"
     #scenario_file = dp.scenarios / "psb_mtt_test/maneuvering_target.yaml"
     #scenario_file = dp.scenarios / "psb_mtt_test/overtaking.yaml"
     #scenario_file = dp.scenarios / "psb_mtt_test/overtaken.yaml"
-    #scenario_file = dp.scenarios / "psb_mtt_test/simple_multi_target.yaml"
+    scenario_file = dp.scenarios / "psb_mtt_test/simple_multi_target.yaml"
 
     sg_config = Config()
     sg_config.behavior_generator.ownship_method = BehaviorGenerationMethod.ConstantSpeedAndCourse
@@ -93,15 +93,15 @@ if __name__ == "__main__":
     
     
 
-    # folder_path = '/home/ragnarnw/Github/Plotting/Plotting_SR_2023/'
+    #folder_path = '/home/ragnarnw/Github/Plotting/Plotting_SR_2023/Clutter/'
     #folder_path_backup = '/home/ragnar/Github/Plotting_SR_2023/Backup/'
-    # file_name = 'Test3_VIMMJIPDA'
+    # file_name = ['Head_on', 'crossing_do_give_way', 'crossing_os_give_way', 'overtaking', 'overtaken', 'multi_ship']
     #file_name_backup = 'Test3_VIMMJIPDA'
     # file_name = 'Test3_KF'
     # file_name_backup = 'Test3_KF'
 
     # # 1000 funker ikke av en eller annen grunn, så holder meg til 500 enn så lenge
-    # with open(folder_path + file_name, 'wb') as file:
+    # with open(folder_path + file_name[i], 'wb') as file:
         # pickle.dump(output[0]['episode_simdata_list'], file)
 
     # with open(folder_path_backup + file_name_backup, 'wb') as file:

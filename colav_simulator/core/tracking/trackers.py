@@ -495,8 +495,7 @@ class VIMMJIPDA(ITracker):
                 # print("z = : ", z , "type: ", type(z))
                 sensor_measurements.append(z)
                 meas_covariance_NE = sensor._params.R
-        if t%10==0:
-            print("t:", t, " meas: ", sensor_measurements)
+        
                 # print("clutter = : ", clutter , "type: ", type(clutter))
                 # print(sensor._params.to_dict())
         # meas_covariance_NE[0][0] = 10 # To see that the covariance comes out correct
@@ -562,22 +561,29 @@ class VIMMJIPDA(ITracker):
         if new_meas:
             self._manager.step(sensor_measurement, float(t), ownship=ownship_pos)
 
-
-        tracks = []
+        track_indexes = []
+        for track in self._manager.tracks:
+            track_indexes.append(track.index)
+        sorted_track_indexes = sorted(track_indexes)
+        
+        if t%10 ==0:
+            print(track_indexes)
+        
+        tracks = [None]*len(track_indexes)
         # for track in self._manager.tracks:
         #     print("Timestep: ", t , " ",  track)
-
+        
         for track in self._manager.tracks:
-            if track.index > len(self._means):
-                self._means.append(np.array([0,0,0,0]))
-                print("Test1")
-            if track.index > len(self._covs):
-                self._covs.append(np.eye(4))
-                print("Test2")
-            if track.index > len(self._length_upd):
-                self._length_upd.append(true_do_states[0][2])
-            if track.index > len(self._width_upd):
-                self._width_upd.append(true_do_states[0][3])
+            # if track.index > len(self._means):
+            #     self._means.append(np.array([0,0,0,0]))
+            #     print("Test1")
+            # if track.index > len(self._covs):
+            #     self._covs.append(np.eye(4))
+            #     print("Test2")
+            # if track.index > len(self._length_upd):
+            #     self._length_upd.append(true_do_states[0][2])
+            # if track.index > len(self._width_upd):
+            #     self._width_upd.append(true_do_states[0][3])
 
 
             # print(type(track))
@@ -597,8 +603,8 @@ class VIMMJIPDA(ITracker):
                         [cov_xy[0][1][2], cov_xy[0][0][1], cov_xy[0][3][1], cov_xy[0][1][1]]
                 ])
             # print(track.index)
-            self._means[track.index - 1] = mean_NE
-            self._covs[track.index - 1] = cov_NE
+            #self._means[track.index - 1] = mean_NE
+            #self._covs[track.index - 1] = cov_NE
             # print(mean_NE, type(mean_NE), 'mean \n')
 
             
@@ -611,17 +617,21 @@ class VIMMJIPDA(ITracker):
             
         # print(self._labels, 'labels')  
         #TODO: Move this into loop for more tracks than 1
-            
-            tracks.append(
-                (
-                    track.index,
-                    self._means[track.index - 1],
-                    self._covs[track.index - 1],
-                    self._length_upd[track.index - 1],
-                    self._width_upd[track.index - 1]
-                )
-            )
+            for i, index in enumerate(sorted_track_indexes):
+                if track.index == index:
+
+                    tracks[i] = (
+                        (
+                            i,
+                            mean_NE,
+                            cov_NE,
+                            true_do_states[0][2],
+                            true_do_states[0][3]
+                        )
+                    )
         
+        if t%10==0:
+            print(tracks)
         
         #Return tracks and sensor_measurements
         return tracks, sensor_measurements
@@ -630,15 +640,35 @@ class VIMMJIPDA(ITracker):
 
 
     def get_track_information(self) -> Tuple[list, list]:
-        tracks = []
+        track_indexes = []
         for track in self._manager.tracks:
-            tracks.append(
-                (
-                    track.index,
-                    self._means[track.index-1],
-                    self._covs[track.index-1],
-                    self._length_upd[track.index-1],
-                    self._width_upd[track.index-1]
-                )
-            )
+            track_indexes.append(track.index)
+        sorted_track_indexes = sorted(track_indexes)
+        
+        tracks = [None]*len(track_indexes)
+
+        for track in self._manager.tracks:
+            
+            mean_xy, cov_xy = track.states.get_mean_covariance_array()
+            mean_NE = np.array([mean_xy[0][2], mean_xy[0][0], mean_xy[0][3], mean_xy[0][1]])
+            cov_NE = np.array([
+                        [cov_xy[0][2][2], cov_xy[0][0][2], cov_xy[0][2][3] , cov_xy[0][2][1]],
+                        [cov_xy[0][0][2], cov_xy[0][0][0], cov_xy[0][0][3], cov_xy[0][0][1]],
+                        [cov_xy[0][2][3], cov_xy[0][0][3], cov_xy[0][3][3], cov_xy[0][3][1]],
+                        [cov_xy[0][1][2], cov_xy[0][0][1], cov_xy[0][3][1], cov_xy[0][1][1]]
+                ])
+            
+            for i, index in enumerate(sorted_track_indexes):
+                if track.index == index:
+
+                    tracks[i] = (
+                        (
+                            i,
+                            mean_NE,
+                            cov_NE,
+                            self._length_upd[0],
+                            self._width_upd[0]
+                        )
+                    )
+    
         return tracks, self._NIS

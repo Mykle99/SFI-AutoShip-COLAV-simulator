@@ -2,7 +2,7 @@ name: "head_on_psbmpc_mtt"
 save_scenario: False
 t_start: 0.0
 t_end: 500.0
-dt_sim: 0.1
+dt_sim: 0.5
 utm_zone: 33
 map_size: [5000.0, 4000.0]
 map_origin_enu: [35500.0, 6954000.0]
@@ -175,7 +175,7 @@ ship_list:
           measurement_rate: 0.5
           R: [25.0, 25.0]
           R_true: [25.0, 25.0]
-          generate_clutter: False
+          generate_clutter: True
           clutter_cardinality_expectation: 1
       #- ais:
       #    max_range: 5000.0

@@ -1,4 +1,4 @@
-name: "overtaking_psbmpc_mtt"
+name: "overtaken_psbmpc_mtt"
 save_scenario: False
 t_start: 0.0
 t_end: 400.0
@@ -8,7 +8,7 @@ map_size: [6000.0, 6000.0]
 map_origin_enu: [38000.0, 6956450.0]
 map_data_files: ["More_og_Romsdal_utm33.gdb"]
 new_load_of_map_data: True
-n_episodes: 10
+n_episodes: 1
 type: OT_ing
 n_random_ships: 1
 ship_list:

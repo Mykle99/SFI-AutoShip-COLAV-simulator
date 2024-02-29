@@ -559,14 +559,15 @@ class ScenarioGenerator:
 
             episode = {}
             episode["ship_list"], episode["disturbance"], episode["config"] = self.generate_episode(
-                    copy.deepcopy(ship_list),
-                    copy.deepcopy(config),
-                    ais_vessel_data_list,
-                    mmsi_list,
-                    show_plots=show_plots,
+                copy.deepcopy(ship_list),
+                config_copy,
+                ais_vessel_data_list,
+                mmsi_list,
+                show_plots=show_plots,
             )
-            ep_str = str(ep + 1).zfill(3)
-            episode["config"].name = f"{config.name}_ep{ep_str}"
+            if self._bad_episode:
+                continue
+
             if self._config.manual_episode_accept:
                 print("ScenarioGenerator: Accept episode? (y/n)")
                 answer = input()  # "y"
@@ -679,8 +680,8 @@ class ScenarioGenerator:
         disturbance = self.generate_disturbance(config)
 
         self._bad_episode = self.check_for_bad_episode(ship_list)
-        
-        self._prev_ship_list[: len(ship_list)] = copy.deepcopy(ship_list) 
+
+        self._prev_ship_list[: len(ship_list)] = copy.deepcopy(ship_list)
         return ship_list, disturbance, config
 
     def check_for_bad_episode(

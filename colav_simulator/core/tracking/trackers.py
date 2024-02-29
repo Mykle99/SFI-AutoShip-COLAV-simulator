@@ -453,8 +453,9 @@ class VIMMJIPDA(ITracker):
         self._width_upd: list = []  # List of DO width estimates. Assumed known
         self._NIS: list = []
 
-
+        
         self._manager: Manager = setup_manager(self._params.IMM_off, self._params.single_target, self._params.visibility_off)
+        self._sorted_track_indexes: list = []
 
     def track(self, t: float, dt: float, true_do_states: list, ownship_state: np.ndarray) -> Tuple[list, list]:
         """Tracks/updates estimates on dynamic obstacles, based on sensor measurements
@@ -561,15 +562,13 @@ class VIMMJIPDA(ITracker):
         if new_meas:
             self._manager.step(sensor_measurement, float(t), ownship=ownship_pos)
 
-        track_indexes = []
         for track in self._manager.tracks:
-            track_indexes.append(track.index)
-        sorted_track_indexes = sorted(track_indexes)
+            if track.index not in self._sorted_track_indexes:
+                self._sorted_track_indexes.append(track.index)
+                self._sorted_track_indexes.sort()
         
-        if t%10 ==0:
-            print(track_indexes)
         
-        tracks = [None]*len(track_indexes)
+        tracks = []
         # for track in self._manager.tracks:
         #     print("Timestep: ", t , " ",  track)
         
@@ -617,10 +616,10 @@ class VIMMJIPDA(ITracker):
             
         # print(self._labels, 'labels')  
         #TODO: Move this into loop for more tracks than 1
-            for i, index in enumerate(sorted_track_indexes):
+            for i, index in enumerate(self._sorted_track_indexes):
                 if track.index == index:
 
-                    tracks[i] = (
+                    tracks.append(
                         (
                             i,
                             mean_NE,
@@ -630,8 +629,7 @@ class VIMMJIPDA(ITracker):
                         )
                     )
         
-        if t%10==0:
-            print(tracks)
+        tracks.sort(key=lambda x: x[0])
         
         #Return tracks and sensor_measurements
         return tracks, sensor_measurements
@@ -640,12 +638,9 @@ class VIMMJIPDA(ITracker):
 
 
     def get_track_information(self) -> Tuple[list, list]:
-        track_indexes = []
-        for track in self._manager.tracks:
-            track_indexes.append(track.index)
-        sorted_track_indexes = sorted(track_indexes)
         
-        tracks = [None]*len(track_indexes)
+        
+        tracks = []
 
         for track in self._manager.tracks:
             
@@ -658,10 +653,10 @@ class VIMMJIPDA(ITracker):
                         [cov_xy[0][1][2], cov_xy[0][0][1], cov_xy[0][3][1], cov_xy[0][1][1]]
                 ])
             
-            for i, index in enumerate(sorted_track_indexes):
+            for i, index in enumerate(self._sorted_track_indexes):
                 if track.index == index:
 
-                    tracks[i] = (
+                    tracks.append(
                         (
                             i,
                             mean_NE,
@@ -670,5 +665,6 @@ class VIMMJIPDA(ITracker):
                             self._width_upd[0]
                         )
                     )
-    
+        tracks.sort(key=lambda x: x[0])
+        
         return tracks, self._NIS

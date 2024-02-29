@@ -7,6 +7,7 @@
 
     Author: Trym Tengesdal, Magne Aune, Joachim Miller
 """
+
 import copy
 import os
 from typing import Optional, Tuple
@@ -20,7 +21,6 @@ import scipy.spatial as scipy_spatial
 import seacharts.display.colors as colors
 import shapely
 import shapely.ops as ops
-from cartopy.feature import ShapelyFeature
 from osgeo import osr
 from seacharts.enc import ENC
 from shapely import affinity, strtree
@@ -476,40 +476,76 @@ def create_ship_polygon(
     return affinity.rotate(poly, -heading, origin=(y, x), use_radians=True)
 
 
+def plot_shapely_multipolygon(
+    ax: plt.Axes, mp: MultiPolygon, color: str, fill: bool = True, alpha: float = 1.0, zorder: int = 1
+) -> plt.Axes:
+    """Plots a shapely MultiPolygon object on a matplotlib axes.
+
+    Args:
+        ax (plt.Axes): Matplotlib axes handle.
+        mp (MultiPolygon): MultiPolygon object to plot.
+        color (str, optional): Color of the MultiPolygon.
+        fill (bool, optional): Option for filling the MultiPolygon. Defaults to False.
+        alpha (float, optional): Transparency of the MultiPolygon. Defaults to 1.0.
+        zorder (int, optional): Z-order of the MultiPolygon. Defaults to 1.
+    """
+    if isinstance(mp, Polygon):
+        mp = MultiPolygon([mp])
+
+    for poly in mp.geoms:
+        if fill:
+            ax.fill(*poly.exterior.xy, color=color, alpha=alpha, zorder=zorder)
+        else:
+            ax.plot(*poly.exterior.xy, color=color, zorder=zorder)
+    return ax
+
+
 def plot_background(
-    ax: plt.Axes, enc: ENC, show_shore: bool = True, show_seabed: bool = True, dark_mode: bool = True
+    ax: plt.Axes,
+    enc: ENC,
+    show_shore: bool = True,
+    show_seabed: bool = True,
+    dark_mode: bool = True,
+    uniform_seabed_color: bool = False,
 ) -> None:
     """Creates a static background based on the input seacharts
 
     Args:
         ax (plt.Axes): Matplotlib axes handle.
         enc (ENC): Electronic Navigational Chart object
-        show = Option for visualization
+        show_shore (bool, optional): Option for showing the shore. Defaults to True.
+        show_seabed (bool, optional): Option for showing the seabed. Defaults to True.
+        dark_mode (bool, optional): Option for dark mode. Defaults to True.
+        uniform_seabed_color (bool, optional): Option for using a uniform color for the seabed. Defaults to False.
 
     Returns:
         Tuple[]: Tuple of limits in x and y for the background extent
     """
     # For every layer put in list and assign a color
-
     if enc.land:
         color = "#142c38" if dark_mode else colors.color_picker(enc.land.color)
-        ax.add_feature(ShapelyFeature([enc.land.geometry], color=color, zorder=enc.land.z_order, crs=enc.crs))
+        plot_shapely_multipolygon(ax, enc.land.geometry, color=color, zorder=enc.land.z_order)
 
     if show_shore and enc.shore:
         color = "#142c38" if dark_mode else colors.color_picker(enc.shore.color)
-        ax.add_feature(ShapelyFeature([enc.shore.geometry], color=color, zorder=enc.shore.z_order, crs=enc.crs))
+        plot_shapely_multipolygon(ax, enc.shore.geometry, color=color, zorder=enc.shore.z_order)
 
     if show_seabed and enc.seabed:
         bins = len(enc.seabed.keys())
         count = 0
         for _, layer in enc.seabed.items():
-            rank = layer.z_order + count
-            color = colors.color_picker(count, bins)
-            ax.add_feature(ShapelyFeature([layer.geometry], color=color, zorder=rank, crs=enc.crs))
+            if uniform_seabed_color:
+                rank = enc.seabed[0].z_order
+                color = colors.color_picker(0, bins)
+            else:
+                rank = layer.z_order + count
+                color = colors.color_picker(count, bins)
+            plot_shapely_multipolygon(ax, layer.geometry, color=color, zorder=rank)
             count += 1
 
     x_min, y_min, x_max, y_max = enc.bbox
-    ax.set_extent((x_min, x_max, y_min, y_max), crs=enc.crs)
+    ax.set_xlim((x_min, x_max))  # Easting
+    ax.set_ylim((y_min, y_max))  # Northing
 
 
 def find_minimum_depth(vessel_draft: float, enc: ENC):
@@ -541,7 +577,11 @@ def extract_relevant_grounding_hazards(vessel_min_depth: int, enc: ENC) -> list:
     Returns:
         list: The relevant grounding hazards.
     """
-    dangerous_seabed = enc.seabed[0].geometry.difference(enc.seabed[vessel_min_depth].geometry)
+    dangerous_seabed = (
+        enc.seabed[0].geometry.difference(enc.seabed[vessel_min_depth].geometry)
+        if vessel_min_depth > 0
+        else MultiPolygon()
+    )
     return [enc.land.geometry, enc.shore.geometry, dangerous_seabed]
 
 
@@ -561,7 +601,11 @@ def extract_relevant_grounding_hazards_as_union(
     Returns:
         list: The relevant grounding hazards.
     """
-    dangerous_seabed = enc.seabed[0].geometry.difference(enc.seabed[vessel_min_depth].geometry)
+    dangerous_seabed = (
+        enc.seabed[0].geometry.difference(enc.seabed[vessel_min_depth].geometry)
+        if vessel_min_depth > 0
+        else MultiPolygon()
+    )
     # return [enc.land.geometry, enc.shore.geometry, dangerous_seabed]
     relevant_hazards = [enc.land.geometry.union(enc.shore.geometry).union(dangerous_seabed)]
     filtered_relevant_hazards = []
@@ -584,7 +628,11 @@ def extract_relevant_grounding_hazards_as_union(
     if show_plots:
         enc.start_display()
         for hazard in filtered_relevant_hazards:
-            enc.draw_polygon(hazard, color="red", fill=False)
+            if isinstance(hazard, MultiPolygon):
+                for poly in hazard.geoms:
+                    enc.draw_polygon(poly, color="red", fill=False)
+            else:
+                enc.draw_polygon(hazard, color="red", fill=False)
     return filtered_relevant_hazards
 
 
@@ -612,7 +660,7 @@ def generate_random_goal_position(
     safe_sea_cdt: list,
     safe_sea_cdt_weights: list,
     bbox: Optional[Tuple[float, float, float, float]] = None,
-    min_distance_from_start: float = 100.0,
+    min_distance_from_start: float = 300.0,
     max_distance_from_start: float = 10000.0,
     sector_width: float = 60.0 * np.pi / 180.0,
     min_distance_to_land: float = 50.0,
@@ -626,7 +674,7 @@ def generate_random_goal_position(
         xs_start (np.ndarray): Starting CSOG state of the ship [x, y, U, chi]^T.
         safe_sea_cdt (list): List of triangles defining the safe sea region, used to sample more efficiently.
         safe_sea_cdt_weights (list): List of weights for the safe sea region triangles, used to sample more efficiently.
-        min_distance_from_start (float, optional): Minimum distance from the starting position. Defaults to 100.0.
+        min_distance_from_start (float, optional): Minimum distance from the starting position. Defaults to 300.0.
         max_distance_from_start (float, optional): Maximum distance from the starting position. Defaults to 10000.0.
         sector_width (float, optional): Width of the sector to sample from. Defaults to 60.0 * np.pi / 180.0.
         min_distance_to_land (float, optional): Minimum distance to land. Defaults to 50.0.
@@ -643,25 +691,25 @@ def generate_random_goal_position(
         print(
             "WARNING: Max_distance_from_start must be larger than min_distance_from_start in goal position sampling. Setting to default values.."
         )
-        max_distance_from_start = min_distance_from_start + 400.0
+        max_distance_from_start = min_distance_from_start + 500.0
 
     northing = xs_start[0] + max_distance_from_start * np.cos(xs_start[3])
     easting = xs_start[1] + max_distance_from_start * np.sin(xs_start[3])
     sector_radius = max(max_distance_from_start, min_distance_from_start)
     n_points = 100
-    angle_range_port = np.linspace(-sector_width / 2.0 + xs_start[3], sector_width / 2.0 + xs_start[3], n_points)
-    arc_port = [
+    angle_range = np.linspace(-sector_width / 2.0 + xs_start[3], sector_width / 2.0 + xs_start[3], n_points)
+    arc = [
         (xs_start[1] + sector_radius * np.sin(angle), xs_start[0] + sector_radius * np.cos(angle))
-        for angle in angle_range_port
+        for angle in angle_range
     ]
-    arc_line_port = LineString(arc_port)
-    sector_poly = Polygon(list(arc_line_port.coords) + [(xs_start[1], xs_start[0])])
+    arc_linestring = LineString(arc)
+    sector_poly = Polygon(list(arc_linestring.coords) + [(xs_start[1], xs_start[0])])
     sector_poly = sector_poly.intersection(bbox_poly)
     if show_plots:
         enc.start_display()
-        enc.draw_polygon(sector_poly, color="green", fill=True, alpha=0.5)
+        enc.draw_polygon(sector_poly, color="green", fill=True, alpha=0.2)
     max_iter = 3000
-    for _ in range(max_iter):
+    for it in range(max_iter):
         p = mhm.sample_from_triangulation(rng, safe_sea_cdt, safe_sea_cdt_weights)
         easting, northing = p[0], p[1]
 
@@ -674,6 +722,9 @@ def generate_random_goal_position(
             and (dist2land >= min_distance_to_land)
         ):
             break
+
+        if it == max_iter - 1:
+            print("WARNING: No goal position that satisfies the constraints found. Returning a random position...")
 
     return northing, easting
 
@@ -741,7 +792,7 @@ def find_closest_collision_free_point_on_segment(
     assert p1.shape == (2,) and p2.shape == (2,), "p1 and p2 must be 2D vectors"
     segment = LineString([(p1[1], p1[0]), (p2[1], p2[0])])
     if hazards is None:
-        hazards = extract_relevant_grounding_hazards_as_union(draft, enc, buffer=min_dist)
+        hazards = extract_relevant_grounding_hazards_as_union(find_minimum_depth(draft, enc), enc, buffer=min_dist)
 
     for hazard in hazards:
         if hazard.is_empty:
@@ -1409,7 +1460,7 @@ def plot_disturbance(
         origin[1] - 1.2 * magnitude + text_location_offset[1],
     )
 
-    circle_handle = enc.draw_circle(origin, radius=magnitude, color="white", fill=True, alpha=0.4)
+    circle_handle = enc.draw_circle(origin, radius=magnitude, color="white", fill=True, alpha=0.2)
     arrow_handle = enc.draw_arrow(arrow_start, arrow_end, color=color, width=linewidth, fill=True)
     text_handle = enc.draw_text(name, text_location, color=color, size=10)
     return [circle_handle, arrow_handle, text_handle]
@@ -1423,7 +1474,7 @@ def plot_waypoints(
     disk_buffer: Optional[float] = 80,
     hole_buffer: Optional[float] = 10,
     linewidth: Optional[float] = None,
-    alpha: Optional[float] = None,
+    alpha: Optional[float] = 0.6,
     show_annuluses: Optional[bool] = True,
     draft: Optional[float] = 5.0,
 ):

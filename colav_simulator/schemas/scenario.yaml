@@ -30,6 +30,10 @@ episode_generation:
       required: False
       type: integer
       nullable: True
+    n_constant_os_state_episodes:
+      required: False
+      type: integer
+      nullable: True
     n_constant_os_plan_episodes:
       required: False
       type: integer
@@ -50,7 +54,15 @@ episode_generation:
       required: False
       nullable: True
       type: string
+    delta_uniform_position_sample:
+      required: False
+      nullable: True
+      type: integer
 n_episodes:
+  required: False
+  type: integer
+  nullable: True
+n_constant_os_state_episodes:
   required: False
   type: integer
   nullable: True
@@ -70,6 +82,10 @@ n_constant_disturbance_episodes:
   required: False
   nullable: True
   type: integer
+delta_uniform_position_sample:
+  required: False
+  nullable: True
+  type: integer
 map_data_files:
   required: True
   type: list
@@ -77,13 +93,12 @@ map_data_files:
   schema:
     type: string
 map_size:
-  required: False
+  required: True
   type: list
   maxlength: 2
   minlength: 2
   schema:
     type: float
-  nullable: True
 
 map_origin_enu:
   required: False

@@ -95,6 +95,9 @@ behavior_generator:
     target_ship_method:
       required: True
       type: string
+    target_ship_rrt_behavior_sampling_method:
+      required: True
+      type: string
     n_wps_range:
       required: True
       type: list

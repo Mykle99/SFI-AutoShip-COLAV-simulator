@@ -478,6 +478,8 @@ class ScenarioGenerator:
         save_scenario_folder: Optional[Path] = dp.scenarios,
         reset_episode_counter: Optional[bool] = True,
         n_episodes: Optional[int] = None,
+        batch_number: Optional[int] = None, 
+        n_batches: Optional[int] = None,
     ) -> Tuple[list, senc.ENC]:
         """Main class function. Creates a maritime scenario, with a number of `n_episodes` based on the input config or config file.
 
@@ -493,6 +495,8 @@ class ScenarioGenerator:
             - save_scenario_folder (Path, optional): Absolute path to the folder where the scenario definition should be saved. Defaults to dp.scenarios.
             - reset_episode_counter (bool, optional): Flag determining whether or not to reset the episode counter. Defaults to True.
             - n_episodes (int, optional): Number of episodes to generate. Defaults to None.
+            - batch_number (int, optional): Batch number for multi-processing. Defaults to None.
+            - n_batches (int, optional): Number of batches for multi-processing. Defaults to None.
 
         Returns:
             - Tuple[list, ENC]: List of scenario episodes, each containing a dictionary of episode information. Also, the corresponding ENC object is returned.
@@ -529,13 +533,22 @@ class ScenarioGenerator:
 
         n_episodes = config.episode_generation.n_episodes if n_episodes is None else n_episodes
 
+        if batch_number is not None and n_batches is not None and not self._config.manual_episode_accept:
+            start_ep = batch_number * n_episodes
+        else:
+            start_ep = 0
+            n_batches = 1
+
         if config.n_random_ships is not None:
             n_random_ships_list = [config.n_random_ships for _ in range(n_episodes)]
         elif config.n_random_ships_range is not None:
-            n_random_ships_list = [
-                int(self.rng.integers(config.n_random_ships_range[0], config.n_random_ships_range[1], endpoint=True))
-                for _ in range(n_episodes)
-            ]
+            n_random_ships_list = []
+            for local_ep in range(n_episodes):
+                actual_ep = start_ep + local_ep
+                self.seed(actual_ep)
+                n_random_ships_list.append(
+                    int(self.rng.integers(config.n_random_ships_range[0], config.n_random_ships_range[1], endpoint=True))
+                )
         else:
             n_random_ships_list = [0 for _ in range(n_episodes)]
         max_number_of_ships = max(n_random_ships_list) + 1  # +1 for own-ship
@@ -550,11 +563,14 @@ class ScenarioGenerator:
 
         self._prev_ship_list = [None for _ in range(max_number_of_ships)]
         self._first_csog_states = [None for _ in range(max_number_of_ships)]
-        for ep in range(n_episodes):
-            n_random_ships = n_random_ships_list[ep]
+        for local_ep in range(n_episodes):
+            actual_ep = start_ep + local_ep
+            self.seed(actual_ep)
+            n_random_ships = n_random_ships_list[local_ep]
             config_copy = copy.deepcopy(config)
             config_copy.n_random_ships = n_random_ships
 
+            # Place to add Monte Sim as a function of ep number
             ship_list, config_copy = self._create_partially_defined_ships(config_copy)
 
             episode = {}
@@ -572,16 +588,17 @@ class ScenarioGenerator:
                 print("ScenarioGenerator: Accept episode? (y/n)")
                 answer = input()  # "y"
                 if answer not in ["y", "Y", "yes", "Yes"]:
-                    if ep < n_episodes - 1:
-                        self._uniform_os_state_update_indices[ep + 1] = ep + 1
-                        self._os_plan_update_indices[ep + 1] = ep + 1
-                        self._os_state_update_indices[ep + 1] = ep + 1
-                        self._do_plan_update_indices[ep + 1] = ep + 1
+                    if local_ep < n_episodes - 1:
+                        self._uniform_os_state_update_indices[local_ep + 1] = local_ep + 1
+                        self._os_plan_update_indices[local_ep + 1] = local_ep + 1
+                        self._os_state_update_indices[local_ep + 1] = local_ep + 1
+                        self._do_plan_update_indices[local_ep + 1] = local_ep + 1
                     continue
 
             self._episode_counter += 1
+            n_actual_episodes = n_batches * n_episodes
             if self._config.verbose:
-                print(f"ScenarioGenerator: Episode {self._episode_counter} of {n_episodes} created.")
+                print(f"ScenarioGenerator: Episode {actual_ep + 1} of {n_actual_episodes} created.")
 
             ep_str = str(self._episode_counter + 1).zfill(3)
             episode["config"].name = f"{config.name}_ep{ep_str}"

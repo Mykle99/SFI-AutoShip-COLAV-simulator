@@ -16,7 +16,6 @@ import colav_simulator.common.map_functions as mapf
 import colav_simulator.common.miscellaneous_helper_methods as mhm
 import colav_simulator.common.paths as dp
 import colav_simulator.core.stochasticity as stochasticity
-import colav_simulator.core.colav.colav_interface as ci
 import colav_simulator.scenario_config as sc
 import colav_simulator.viz.visualizer as viz
 import numpy as np

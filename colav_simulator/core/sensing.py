@@ -46,6 +46,8 @@ class RadarParams:
     R_true: np.ndarray = field(
         default_factory=lambda: np.diag([5.0**2, 5.0**2])
     )  # meas cov that reflects the true noise characteristics. Used to generate measurements
+    generate_clutter: bool = field(default_factory=lambda: False)
+    clutter_cardinality_expectation: int = 5
 
     @classmethod
     def from_dict(self, config_dict: dict):
@@ -54,6 +56,8 @@ class RadarParams:
             measurement_rate=config_dict["measurement_rate"],
             R=np.diag(config_dict["R"]),
             R_true=np.diag(config_dict["R_true"]),
+            generate_clutter=config_dict["generate_clutter"],
+            clutter_cardinality_expectation=config_dict["clutter_cardinality_expectation"],
         )
 
     def to_dict(self) -> dict:
@@ -159,7 +163,7 @@ class Radar(ISensor):
 
     def __init__(self, params: RadarParams = RadarParams()) -> None:
         self._params: RadarParams = params
-        self._prev_meas_time: list = []
+        self._prev_meas_time: float = 0.0
         self._initialized: bool = False
 
     def R(self, xs: np.ndarray) -> np.ndarray:
@@ -174,17 +178,39 @@ class Radar(ISensor):
     def generate_measurements(self, t: float, true_do_states: list, ownship_state: np.ndarray) -> Optional[list]:
         measurements = []
         if not self._initialized:
-            self._prev_meas_time = [t] * len(true_do_states)
+            self._prev_meas_time = t
             self._initialized = True
-        for i, (_, xs, length, width) in enumerate(true_do_states):
-            dist_ownship_to_do = np.sqrt((xs[0] - ownship_state[0]) ** 2 + (xs[1] - ownship_state[1]) ** 2)
-            if (t - self._prev_meas_time[i]) >= (1.0 / self._params.measurement_rate) and dist_ownship_to_do <= self._params.max_range:
-                z = self.h(xs) + np.random.multivariate_normal(np.zeros(2), self._params.R_true)
-                self._prev_meas_time[i] = t
-            else:
+        if (t - self._prev_meas_time) >= (1.0 / self._params.measurement_rate):
+            for i, (_, xs, length, width) in enumerate(true_do_states):
+                dist_ownship_to_do = np.sqrt((xs[0] - ownship_state[0]) ** 2 + (xs[1] - ownship_state[1]) ** 2)
+                if dist_ownship_to_do <= self._params.max_range:
+                    z = self.h(xs) + np.random.multivariate_normal(np.zeros(2), self._params.R_true)
+                else:
+                    z = np.nan * np.ones(2)
+                measurements.append(z)
+            self._prev_meas_time = t
+            if self._params.generate_clutter:
+                z_clutter = self.generate_clutter(t, ownship_state)
+                measurements.extend(z_clutter)
+        else:
+            for i, (_, xs, length, width) in enumerate(true_do_states):
                 z = np.nan * np.ones(2)
-            measurements.append(z)
+                measurements.append(z)
         return measurements
+    
+    def generate_clutter(self, t: float, ownship_state: np.ndarray) -> Optional[list]:
+        clutter = []
+        if (self._params.generate_clutter):
+            cardinality = np.random.poisson(self._params.clutter_cardinality_expectation, 1)
+            r = self._params.max_range * np.sqrt(np.random.uniform(0,1,cardinality))
+            theta = np.random.uniform(0, 2*np.pi, cardinality)
+            x = r * np.cos(theta) + ownship_state[0]
+            y = r * np.sin(theta) + ownship_state[1]
+            # print(cardinality, type(cardinality))
+            for i in range(cardinality[0]):
+                clutter.append(np.array([x[i],y[i]]))
+            return clutter
+        return
 
     @property
     def max_range(self) -> float:

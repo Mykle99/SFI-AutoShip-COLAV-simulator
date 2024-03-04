@@ -135,7 +135,8 @@ dmypy.json
 output/animations/*
 output/ais/*
 output/figures/*
-output/intention_files/*
+output/intention_files/intention_file.csv
+output/intention_files/trajectory_file.csv
 
 main.py
 todo.txt

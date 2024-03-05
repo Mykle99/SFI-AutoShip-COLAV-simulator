@@ -624,13 +624,12 @@ class VIMMJIPDA(ITracker):
                             i,
                             mean_NE,
                             cov_NE,
-                            true_do_states[0][2],
-                            true_do_states[0][3]
+                            8,
+                            3
                         )
                     )
         
         tracks.sort(key=lambda x: x[0])
-        
         #Return tracks and sensor_measurements
         return tracks, sensor_measurements
 
@@ -661,8 +660,8 @@ class VIMMJIPDA(ITracker):
                             i,
                             mean_NE,
                             cov_NE,
-                            self._length_upd[0],
-                            self._width_upd[0]
+                            8,
+                            3
                         )
                     )
         tracks.sort(key=lambda x: x[0])

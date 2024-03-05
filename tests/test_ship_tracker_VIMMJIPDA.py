@@ -20,14 +20,14 @@ dpi_value = 150  # figure dpi value
 
 if __name__ == "__main__":
 
-    #scenario_file = dp.scenarios / "VIMMJIPDA.yaml"
+    scenario_file = dp.scenarios / "VIMMJIPDA.yaml"
     #scenario_file = dp.scenarios / "psb_mtt_test/head_on.yaml"
     #scenario_file = dp.scenarios / "psb_mtt_test/crossing_do_give_way.yaml"
     #scenario_file = dp.scenarios / "psb_mtt_test/crossing_os_give_way.yaml"
     #scenario_file = dp.scenarios / "psb_mtt_test/maneuvering_target.yaml"
     #scenario_file = dp.scenarios / "psb_mtt_test/overtaking.yaml"
     #scenario_file = dp.scenarios / "psb_mtt_test/overtaken.yaml"
-    scenario_file = dp.scenarios / "psb_mtt_test/simple_multi_target.yaml"
+    #scenario_file = dp.scenarios / "psb_mtt_test/simple_multi_target.yaml"
 
     sg_config = Config()
     sg_config.behavior_generator.ownship_method = BehaviorGenerationMethod.ConstantSpeedAndCourse
@@ -54,7 +54,7 @@ if __name__ == "__main__":
     #         print("len(episode)", len(episode), "\n")
     #         print("type(episode)", type(episode),"\n")
     #         print("Print items in episode")
-    #         for items in episode:
+    #         for items in episode:print("t: \n", t)
     #             print(items)
                 
 

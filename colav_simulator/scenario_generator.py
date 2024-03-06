@@ -480,6 +480,7 @@ class ScenarioGenerator:
         n_episodes: Optional[int] = None,
         batch_number: Optional[int] = None, 
         n_batches: Optional[int] = None,
+        montecarlo: Optional[bool] = False
     ) -> Tuple[list, senc.ENC]:
         """Main class function. Creates a maritime scenario, with a number of `n_episodes` based on the input config or config file.
 
@@ -497,6 +498,7 @@ class ScenarioGenerator:
             - n_episodes (int, optional): Number of episodes to generate. Defaults to None.
             - batch_number (int, optional): Batch number for multi-processing. Defaults to None.
             - n_batches (int, optional): Number of batches for multi-processing. Defaults to None.
+            - montecarlo (bool, optional): Flag determining whether or not to use Monte Carlo simulation. Defaults to False.
 
         Returns:
             - Tuple[list, ENC]: List of scenario episodes, each containing a dictionary of episode information. Also, the corresponding ENC object is returned.
@@ -570,7 +572,9 @@ class ScenarioGenerator:
             config_copy = copy.deepcopy(config)
             config_copy.n_random_ships = n_random_ships
 
-            # Place to add Monte Sim as a function of ep number
+            if montecarlo is not None or montecarlo is False:
+                config_copy = self.generate_montecarlo_episode(actual_ep, config)
+
             ship_list, config_copy = self._create_partially_defined_ships(config_copy)
 
             episode = {}
@@ -617,6 +621,40 @@ class ScenarioGenerator:
         if self._config.verbose:
             print(f"ScenarioGenerator: Number of accepted episodes: {self._episode_counter} out of {n_episodes}.")
         return scenario_episode_list, enc_copy
+    
+    def generate_montecarlo_episode(self, actual_ep: int, config: sc.ScenarioConfig) -> sc.ScenarioConfig:
+        """Makes stochastic changes, as a function of actual_ep, to the scenario config for simple Monte Carlo simulation."""
+        np.random.seed(actual_ep)
+        settings_dict = config.to_dict()
+        
+        # n_random_ships = settings_dict["n_random_ships"]
+        # stochasticity  =settings_dict["stochasticity"]
+        # episode_generation = settings_dict["episode_generation"]
+        
+        ship_list = settings_dict["ship_list"]
+        for ship_dict in ship_list:
+            updated_csog_state = ship_dict["csog_state"] \
+                + np.random.multivariate_normal([0, 0, 0, 0], np.diag([50.0, 50.0, 99, 15.0]))
+            if updated_csog_state[2] < 1.0:
+                updated_csog_state[2] = 1.0
+            ship_dict["csog_state"] = updated_csog_state.tolist()
+            
+            waypoints = ship_dict["waypoints"]
+            speed_plan = ship_dict["speed_plan"]
+    
+            for i, waypoint in enumerate(waypoints):
+                updated_waypoint = waypoint \
+                    + np.random.multivariate_normal([0, 0], np.diag([50.0, 50.0]))
+                waypoints[i] = updated_waypoint.tolist()
+    
+            for j, speed in enumerate(speed_plan):
+                updated_speed = speed + np.random.normal(0, 3.0)
+                if updated_speed < 1.0:
+                    updated_speed = 1.0
+                speed_plan[j] = updated_speed  
+
+        config = cp.convert_settings_dict_to_dataclass(sc.ScenarioConfig, settings_dict) 
+        return config
 
     def _create_partially_defined_ships(self, config: sc.ScenarioConfig) -> Tuple[list, sc.ScenarioConfig]:
         """Creates partially defined ship objects and ship configurations for all ships.

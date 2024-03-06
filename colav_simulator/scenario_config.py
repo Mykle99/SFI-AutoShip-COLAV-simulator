@@ -226,6 +226,10 @@ class ScenarioConfig:
 
     @classmethod
     def from_dict(cls, config_dict: dict):
+        stoch_in_config_dict = False
+        if "stochasticity" in config_dict:
+            if config_dict["stochasticity"] != None:
+                stoch_in_config_dict = True
         config = ScenarioConfig(
             name=config_dict["name"],
             save_scenario=config_dict["save_scenario"],
@@ -249,7 +253,7 @@ class ScenarioConfig:
             new_load_of_map_data=config_dict["new_load_of_map_data"],
             filename=config_dict["filename"] if "filename" in config_dict else None,
             stochasticity=(
-                stoch.Config.from_dict(config_dict["stochasticity"]) if "stochasticity" in config_dict else None
+                stoch.Config.from_dict(config_dict["stochasticity"]) if stoch_in_config_dict else None
             ),
             rl_observation_type=config_dict["rl_observation_type"] if "rl_observation_type" in config_dict else None,
             rl_action_type=config_dict["rl_action_type"] if "rl_action_type" in config_dict else None,

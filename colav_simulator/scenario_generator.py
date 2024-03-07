@@ -634,7 +634,7 @@ class ScenarioGenerator:
         ship_list = settings_dict["ship_list"]
         for ship_dict in ship_list:
             updated_csog_state = ship_dict["csog_state"] \
-                + np.random.multivariate_normal([0, 0, 0, 0], np.diag([50.0, 50.0, 99, 15.0]))
+                + np.random.multivariate_normal([0, 0, 0, 0], np.diag([500.0, 500.0, 3, 20.0]))
             if updated_csog_state[2] < 1.0:
                 updated_csog_state[2] = 1.0
             ship_dict["csog_state"] = updated_csog_state.tolist()
@@ -644,7 +644,7 @@ class ScenarioGenerator:
     
             for i, waypoint in enumerate(waypoints):
                 updated_waypoint = waypoint \
-                    + np.random.multivariate_normal([0, 0], np.diag([50.0, 50.0]))
+                    + np.random.multivariate_normal([0, 0], np.diag([500.0, 500.0]))
                 waypoints[i] = updated_waypoint.tolist()
     
             for j, speed in enumerate(speed_plan):

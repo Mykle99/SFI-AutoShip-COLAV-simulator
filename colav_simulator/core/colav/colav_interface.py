@@ -323,13 +323,6 @@ class COLAVBuilder:
             colav = VOWrapper(config)
         elif config and config.name == COLAVType.SBMPC:
             colav = SBMPCWrapper(config)
-        elif config and config.name == COLAVType.IM:
-            colav = IMWrapper(config)
-        elif config and config.name == COLAVType.PSBMPC:
-            colav = PSBMPCWrapper(config)
-        elif config and config.name == COLAVType.SBMPC_CPP:
-            colav = SBMPCCPPWrapper(config)
         else:
             colav = None
-
         return colav

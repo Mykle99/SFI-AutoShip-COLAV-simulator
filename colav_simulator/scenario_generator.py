@@ -572,7 +572,7 @@ class ScenarioGenerator:
             config_copy = copy.deepcopy(config)
             config_copy.n_random_ships = n_random_ships
 
-            if montecarlo is not None or montecarlo is False:
+            if montecarlo is not None and montecarlo is not False:
                 config_copy = self.generate_montecarlo_episode(actual_ep, config)
 
             ship_list, config_copy = self._create_partially_defined_ships(config_copy)

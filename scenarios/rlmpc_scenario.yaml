@@ -58,6 +58,8 @@ ship_list:
           measurement_rate: 0.5
           R: [30.0, 30.0]
           R_true: [25.0, 25.0]
+          generate_clutter: False
+          clutter_cardinality_expectation: 1
       - ais:
           max_range: 5000.0
           ais_class: A

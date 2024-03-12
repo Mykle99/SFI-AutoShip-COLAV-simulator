@@ -195,7 +195,7 @@ class Simulator:
 
                 if self._config.verbose:
                     print(f"\rSimulator: Running scenario episode nr {actual_ep + 1}: {scenario_episode_file}...")
-                sim_data, ship_info, sim_times = self.run_scenario_episode(actual_ep)
+                sim_data, ship_info, sim_times = self.run_scenario_episode()
                 if self._config.verbose:
                     print(
                         f"\rSimulator: Finished running through scenario episode nr {actual_ep + 1}: {scenario_episode_file}."
@@ -263,7 +263,7 @@ class Simulator:
             print("Time limit reached!")
         return truncated
 
-    def run_scenario_episode(self, actual_ep) -> Tuple[pd.DataFrame, dict, np.ndarray]:
+    def run_scenario_episode(self) -> Tuple[pd.DataFrame, dict, np.ndarray]:
         """Runs the simulator for a scenario episode specified by the ship object array, using a time step dt_sim.
 
         Returns: a tuple containing:
@@ -281,7 +281,7 @@ class Simulator:
 
         t_end = self.t_end
         while self.t < self.t_end:
-            sim_data_dict = self.step(actual_ep)
+            sim_data_dict = self.step()
 
             sim_data.append(sim_data_dict)
 
@@ -298,7 +298,7 @@ class Simulator:
         sim_times = np.arange(self.t_start, t_end, self.dt)
         return pd.DataFrame(sim_data), ship_info, sim_times
 
-    def step(self, actual_ep, remote_actor: bool = False) -> dict:
+    def step(self, remote_actor: bool = False) -> dict:
         """Step through the simulation by one time step, using the specified action for the own-ship.
 
         Args:

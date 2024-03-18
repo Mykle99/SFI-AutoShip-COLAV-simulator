@@ -16,6 +16,7 @@ import colav_simulator.common.map_functions as mapf
 import colav_simulator.common.miscellaneous_helper_methods as mhm
 import colav_simulator.common.paths as dp
 import colav_simulator.core.stochasticity as stochasticity
+import colav_simulator.common.math_functions as mf
 import colav_simulator.scenario_config as sc
 import colav_simulator.viz.visualizer as viz
 import numpy as np
@@ -380,9 +381,17 @@ class Simulator:
             raise ValueError(
                 "Either the goal pose must be provided, or a sufficient number of waypoints for the ship to follow!"
             )
+        # Check if the own-ship is within the goal region
         ownship_state = self.ownship.csog_state
         d2goal = np.linalg.norm(ownship_state[:2] - goal_state[:2])
-        return d2goal <= self.ownship.length
+
+        # Check if the last wp has been passe 
+        d_0wp_vec = self.ownship.waypoints[:, -1] - self.ownship.csog_state[0:2]
+        L_wp_segment = self.ownship.waypoints[:, -1] - self.ownship.waypoints[:, -2]
+        wp_segment = mf.normalize_vec(L_wp_segment)
+        segment_passed = wp_segment.dot(d_0wp_vec) < np.cos(np.deg2rad(90.0))
+
+        return True if d2goal <= self.ownship.length or segment_passed else False
 
 
 def extract_valid_sensor_measurements(t: float, recent_sensor_measurements: list, sensor_measurements_i: list) -> list:

@@ -1128,6 +1128,7 @@ def extract_grounding_hazards_from_entire_enc(
         
     return filtered_relevant_hazards
 
+
 def extract_grounding_hazards_from_relevant_sector_in_enc(
     grounding_hazards : list[MultiPolygon],
     ownship_state : np.ndarray, 
@@ -1788,14 +1789,42 @@ def compute_distance_vectors_to_grounding(
                 ]
 
                 if show_plots:
-                    enc.draw_line(points, color="black", width=0.5, marker_type="o")
+                    enc.draw_line(points, color="black", linewidth=0.5, marker_type="o")
 
                 dist_vec = np.array([points[1][0] - points[0][0], points[1][1] - points[0][1]])
                 if np.linalg.norm(dist_vec) <= min_dist:
                     min_dist_vec = dist_vec
                     min_dist = np.linalg.norm(min_dist_vec)
             distance_vectors[:, idx] = min_dist_vec
+    if show_plots:
+        enc.show_display()
     return distance_vectors
+
+
+def calc_nominal_and_actual_OS_traj_dist(
+        os_trajectory: np.ndarray,
+        os_initial_pos: np.ndarray,
+        os_waypoints: np.ndarray    
+    ) -> Tuple[float, float]:
+    """Calculates the nominal and actual OS trajectory distances (euclidean).
+    
+    Args:
+        os_trajectory (np.ndarray): Ownship trajectory in NE.
+        os_initial_pos (np.ndarray): Initial position of the OS in NE.
+        os_waypoints (np.ndarray): Waypoints for the OS in NE.
+
+    Returns:
+        Tuple[float, float]: Nominal and actual trajectory distances for the OS.
+    """
+    actual_traj_dist = np.sum(np.linalg.norm(np.diff(os_trajectory, axis = 1), axis = 0))
+
+    # The distance between the initial state and the initial waypoint
+    nominal_traj_dist = np.linalg.norm(os_initial_pos - os_waypoints[:, 0].reshape(-1, 1))
+
+    # The distances between consecutive waypoints
+    nominal_traj_dist += np.sum(np.linalg.norm(np.diff(os_waypoints, axis = 1), axis = 0))
+    np.set_printoptions(threshold=np.inf)
+    return nominal_traj_dist, actual_traj_dist
 
 
 def get_distance_vectors_to_obstacles(
@@ -1896,6 +1925,56 @@ def compute_distance_vectors_to_dynamic_obstacles(
     return distance_vectors
 
 
+def compute_distance_vectors_to_dynamic_obstacles_from_trajs(
+    os_trajectory: np.ndarray, 
+    do_trajectories: list,
+    show_plots: bool = False,
+    enc: ENC = None 
+) -> np.ndarray:
+    """Computes the (shortest) distance vectors to dynamic obstacles, assuming EN coordinates.
+    Admits trajectories of equal length.
+
+    Args:
+        os_trajectory (np.ndarray): Ownship trajectory.
+        do_trajectories (list): List of dynamic obstacle trajectories.
+
+    Returns:
+        np.ndarray: Distance vectors to the closest dynamic obstacle for all steps.
+    """
+    if len(do_trajectories) == 0:
+        return np.empty(0)
+    n_samples = os_trajectory.shape[1]
+    assert n_samples > 1, "Trajectory must have at least two samples"
+    distance_vectors = np.ndarray((2, n_samples))
+    if show_plots:
+        enc.start_display()
+    for k in range(n_samples):
+        p_os_k = os_trajectory[:, k]
+        min_do_dist_vec_k = np.array([1e6, 1e6])
+        min_do_dist_k = 1e12
+
+        for do_trajectory in do_trajectories:
+            p_do_k = do_trajectory[:, k]
+            dist_vec_k = p_do_k - p_os_k
+            if np.linalg.norm(dist_vec_k) < min_do_dist_k:
+                min_do_dist_k = np.linalg.norm(dist_vec_k)
+                min_do_dist_vec_k = dist_vec_k
+
+        distance_vectors[:, k] = min_do_dist_vec_k
+        if show_plots: # and k%40 == 0:
+            points = [
+                    (os_trajectory[:, k]),
+                    (os_trajectory[:, k] + min_do_dist_vec_k)
+                ]
+            enc.draw_line(points, color = "black", linewidth = 0.5, marker_type = "o")
+            #enc.draw_line(points, color = "blue", linewidth = 0.5, marker_type = "o")
+            #enc.draw_circle((p_do_k), color = "red", fill = True, radius = 5)
+            #enc.draw_circle((p_os_k), color = "green", fill = True, radius = 5)
+    if show_plots:
+        enc.show_display()
+    return distance_vectors
+
+
 def compute_distance_vector_to_bbox(
     x: float, y: float, bbox: Tuple[float, float, float, float], enc: Optional[ENC] = None
 ) -> np.ndarray:
@@ -1958,7 +2037,7 @@ def min_distance_to_hazards(hazards: list, x: float, y: float) -> float:
     return min_dist
 
 
-def min_distance_and_point_to_hazards(hazards: list, x: float, y: float) -> [float, Point]:
+def min_distance_and_point_to_hazards(hazards: list, x: float, y: float) -> list[float, Point]:
     """Compute the minimum distance to hazards from a given point.
 
     Args:

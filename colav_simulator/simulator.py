@@ -288,8 +288,8 @@ class Simulator:
 
             self.visualizer.update_live_plot(self.t, self.enc, self.ship_list, self.recent_sensor_measurements[0])
 
-            terminated = self.is_terminated(verbose=True)
-            truncated = self.is_truncated(verbose=True)
+            terminated = self.is_terminated(verbose=self._config.verbose)
+            truncated = self.is_truncated(verbose=self._config.verbose)
             if terminated or truncated:
                 t_end = self.t
                 break

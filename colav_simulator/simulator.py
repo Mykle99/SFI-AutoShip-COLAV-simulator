@@ -385,7 +385,7 @@ class Simulator:
         ownship_state = self.ownship.csog_state
         d2goal = np.linalg.norm(ownship_state[:2] - goal_state[:2])
 
-        # Check if the last wp has been passe 
+        # Check if the last wp has been passed
         d_0wp_vec = self.ownship.waypoints[:, -1] - self.ownship.csog_state[0:2]
         L_wp_segment = self.ownship.waypoints[:, -1] - self.ownship.waypoints[:, -2]
         wp_segment = mf.normalize_vec(L_wp_segment)

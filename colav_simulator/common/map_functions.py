@@ -11,6 +11,7 @@
 import copy
 import os
 import colav_simulator.common.miscellaneous_helper_methods as mhm
+import colav_simulator.common.math_functions as mf
 import geopandas as gpd
 import geopy.distance
 import matplotlib.pyplot as plt
@@ -1823,8 +1824,44 @@ def calc_nominal_and_actual_OS_traj_dist(
 
     # The distances between consecutive waypoints
     nominal_traj_dist += np.sum(np.linalg.norm(np.diff(os_waypoints, axis = 1), axis = 0))
-    np.set_printoptions(threshold=np.inf)
     return nominal_traj_dist, actual_traj_dist
+
+
+def calc_cross_track_error_from_nominal_traj(
+        os_trajectory: np.ndarray,
+        os_waypoints: np.ndarray  
+    ) -> list:
+    """Calculates the cross track error to the nominal traj (from the actual traj).
+
+    Args:
+    os_trajectory (np.ndarray): Ownship trajectory in NE.
+    os_waypoints (np.ndarray): Waypoints for the OS in NE.
+
+    Returns:
+    List: Cross track error for each time step.
+    """
+    wp_count = 0
+    cross_track_error_list = []
+    for xs in os_trajectory:
+        # Check which waypoints to use for the cross track error calculation
+        d_0wp_vec = os_waypoints[:, wp_count + 1] - xs
+        L_wp_segment = os_waypoints[:, wp_count + 1] - os_waypoints[:, wp_count]
+        wp_segment = mf.normalize_vec(L_wp_segment)
+        segment_passed = wp_segment.dot(d_0wp_vec) < np.cos(np.deg2rad(90.0))
+        if segment_passed:
+            wp_count += 1
+    
+        # Finding and appending cross track error, e, to cross_track_error_list
+        reshaped_os_waypoint_i = os_waypoints[:, wp_count].reshape(-1, 1)
+        reshaped_os_waypoint_i_plus_1 = os_waypoints[:, wp_count + 1].reshape(-1, 1)
+        alpha = np.arctan2(
+            reshaped_os_waypoint_i_plus_1[1] - reshaped_os_waypoint_i[1],
+            reshaped_os_waypoint_i_plus_1[0] - reshaped_os_waypoint_i[i]
+        )
+        e = -(xs[0] - reshaped_os_waypoint_i[0]) * np.sin(alpha) + \
+             (xs[1] - reshaped_os_waypoint_i[1]) * np.cos(alpha)
+        cross_track_error_list.append(e)
+    return cross_track_error_list
 
 
 def get_distance_vectors_to_obstacles(

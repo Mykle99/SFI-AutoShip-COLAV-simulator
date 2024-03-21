@@ -1842,13 +1842,14 @@ def calc_cross_track_error_from_nominal_traj(
     """
     wp_count = 0
     cross_track_error_list = []
-    for xs in os_trajectory:
+    x_traj, y_traj = os_trajectory
+    for x_os, y_os in zip(x_traj, y_traj): # had to flip x_os and y_os to match the waypoints
         # Check which waypoints to use for the cross track error calculation
-        d_0wp_vec = os_waypoints[:, wp_count + 1] - xs
+        d_0wp_vec = os_waypoints[:, wp_count + 1] - [y_os, x_os] 
         L_wp_segment = os_waypoints[:, wp_count + 1] - os_waypoints[:, wp_count]
         wp_segment = mf.normalize_vec(L_wp_segment)
         segment_passed = wp_segment.dot(d_0wp_vec) < np.cos(np.deg2rad(90.0))
-        if segment_passed:
+        if segment_passed: # add check here so we dont go out of bounds
             wp_count += 1
     
         # Finding and appending cross track error, e, to cross_track_error_list
@@ -1856,10 +1857,10 @@ def calc_cross_track_error_from_nominal_traj(
         reshaped_os_waypoint_i_plus_1 = os_waypoints[:, wp_count + 1].reshape(-1, 1)
         alpha = np.arctan2(
             reshaped_os_waypoint_i_plus_1[1] - reshaped_os_waypoint_i[1],
-            reshaped_os_waypoint_i_plus_1[0] - reshaped_os_waypoint_i[i]
+            reshaped_os_waypoint_i_plus_1[0] - reshaped_os_waypoint_i[0]
         )
-        e = -(xs[0] - reshaped_os_waypoint_i[0]) * np.sin(alpha) + \
-             (xs[1] - reshaped_os_waypoint_i[1]) * np.cos(alpha)
+        e = (y_os - reshaped_os_waypoint_i[0]) * (-np.sin(alpha)) + \
+            (x_os - reshaped_os_waypoint_i[1]) * np.cos(alpha)
         cross_track_error_list.append(e)
     return cross_track_error_list
 

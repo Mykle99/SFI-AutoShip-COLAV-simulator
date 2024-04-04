@@ -146,9 +146,10 @@ ship_list:
     #       colregs_violation_cost: 100.0
     #       Q: [1.0, 1.0]
     tracker:
-      kf:
-        P_0: [49.1, 49.1, 0.11, 0.11]
-        q: 0.15
+      god_tracker: ""
+      #kf:
+      #  P_0: [49.1, 49.1, 0.11, 0.11]
+      #  q: 0.15
     sensors:
       - radar:
           max_range: 2000.0

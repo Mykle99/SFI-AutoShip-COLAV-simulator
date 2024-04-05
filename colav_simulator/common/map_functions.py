@@ -1808,6 +1808,8 @@ def calc_nominal_and_actual_OS_traj_dist(
         os_waypoints: np.ndarray    
     ) -> Tuple[float, float]:
     """Calculates the nominal and actual OS trajectory distances (euclidean).
+    Note that the actual_traj_dist can be less than nominal_traj_dist if the OS trajectory
+    does not complete the nominal trajectory for instance.
     
     Args:
         os_trajectory (np.ndarray): Ownship trajectory in NE.

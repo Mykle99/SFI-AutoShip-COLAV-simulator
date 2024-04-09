@@ -2,7 +2,7 @@ name: "crossing_give_way1"
 save_scenario: False
 t_start: 0.0
 t_end: 250.0
-dt_sim: 0.1
+dt_sim: 0.5
 utm_zone: 33
 map_size: [1900.0, 1800.0]
 map_origin_enu: [39750.0, 6957900.0]

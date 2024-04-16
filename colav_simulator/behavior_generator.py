@@ -12,6 +12,9 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Optional, Tuple
 
+import colav_simulator.simulator as simulator
+import colav_simulator.common.paths as dp
+import colav_simulator.common.config_parsing as cp
 import colav_simulator.common.map_functions as mapf
 import colav_simulator.common.math_functions as mf
 import colav_simulator.common.miscellaneous_helper_methods as mhm
@@ -25,8 +28,11 @@ RRT_LIB_FOUND = True
 try:
     import rrt_star_lib # type: ignore (removes error message beneath import)
 except ModuleNotFoundError as err:
-    print(f"Warning: rrt_star_lib not found! Error msg: {err}")
+    temp_config = cp.extract(simulator.Config, dp.config / "simulator.yaml", dp.simulator_schema)
+    if temp_config.verbose:
+        print(f"Warning: rrt_star_lib not found! Error msg: {err}")
     RRT_LIB_FOUND = False
+    del temp_config
 
 
 np.set_printoptions(suppress=True, formatter={"float_kind": "{:.2f}".format})

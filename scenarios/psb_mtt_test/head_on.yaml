@@ -177,6 +177,7 @@ ship_list:
           R_true: [25.0, 25.0]
           generate_clutter: True
           clutter_cardinality_expectation: 5
+          P_D: 1.0
       #- ais:
       #    max_range: 5000.0
       #    ais_class: A
@@ -220,6 +221,7 @@ ship_list:
           R_true: [25.0, 25.0]
           generate_clutter: False
           clutter_cardinality_expectation: 0
+          P_D: 1.0
       - ais:
           max_range: 5000.0
           ais_class: A

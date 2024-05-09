@@ -20,8 +20,8 @@ dpi_value = 150  # figure dpi value
 
 if __name__ == "__main__":
 
-    scenario_file = dp.scenarios / "VIMMJIPDA.yaml"
-    #scenario_file = dp.scenarios / "psb_mtt_test/head_on.yaml"
+    #scenario_file = dp.scenarios / "VIMMJIPDA.yaml"
+    scenario_file = dp.scenarios / "psb_mtt_test/head_on.yaml"
     #scenario_file = dp.scenarios / "psb_mtt_test/crossing_do_give_way.yaml"
     #scenario_file = dp.scenarios / "psb_mtt_test/crossing_os_give_way.yaml"
     #scenario_file = dp.scenarios / "psb_mtt_test/maneuvering_target.yaml"

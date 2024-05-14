@@ -173,11 +173,13 @@ ship_list:
       - radar:
           max_range: 2000.0
           measurement_rate: 0.5
-          R: [25.0, 25.0]
-          R_true: [25.0, 25.0]
+          R_cartesian: [25.0, 25.0]
+          R_cartesian_true: [25.0, 25.0]
           generate_clutter: True
           clutter_cardinality_expectation: 5
-          P_D: 1.0
+          P_D: 0.92
+          include_polar_meas_noise: True
+          R_polar: [64.0, 0.00030461768]
       #- ais:
       #    max_range: 5000.0
       #    ais_class: A
@@ -217,11 +219,13 @@ ship_list:
       - radar:
           max_range: 2000.0
           measurement_rate: 0.5
-          R: [25.0, 25.0]
-          R_true: [25.0, 25.0]
+          R_cartesian: [25.0, 25.0]
+          R_cartesian_true: [25.0, 25.0]
           generate_clutter: False
           clutter_cardinality_expectation: 0
           P_D: 1.0
+          include_polar_meas_noise: False
+          R_polar: [0.0, 0.0]
       - ais:
           max_range: 5000.0
           ais_class: A

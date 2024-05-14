@@ -495,7 +495,7 @@ class VIMMJIPDA(ITracker):
                 z = sensor.generate_measurements(t, true_do_states, ownship_state)
                 # print("z = : ", z , "type: ", type(z))
                 sensor_measurements.append(z)
-                meas_covariance_NE = sensor._params.R
+                meas_covariance_NE = sensor._params.R_cartesian #TODO: Get combined cov if necessary!
         
                 # print("clutter = : ", clutter , "type: ", type(clutter))
                 # print(sensor._params.to_dict())

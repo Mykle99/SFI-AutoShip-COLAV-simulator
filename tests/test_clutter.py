@@ -13,6 +13,7 @@ from matplotlib import pyplot as plt
 from colav_simulator.simulator import Simulator
 import colav_simulator.common.paths as dp
 import pickle
+import time
 
 legend_size = 10  # legend size
 fig_size = [25, 13]  # figure1 size in cm
@@ -30,7 +31,7 @@ if __name__ == "__main__":
                        ]
     
     #scenario_file = dp.scenarios / "VIMMJIPDA.yaml"
-    scenario_file = dp.scenarios / "psb_mtt_test/head_on.yaml"
+    #scenario_file = dp.scenarios / "psb_mtt_test/head_on.yaml"
     #scenario_file = dp.scenarios / "psb_mtt_test/crossing_do_give_way.yaml"
     #scenario_file = dp.scenarios / "psb_mtt_test/crossing_os_give_way.yaml"
     #scenario_file = dp.scenarios / "psb_mtt_test/maneuvering_target.yaml"
@@ -39,6 +40,7 @@ if __name__ == "__main__":
     #scenario_file = dp.scenarios / "psb_mtt_test/simple_multi_target.yaml"
 
     for i in range(len(scenario_list)):
+        start_time = time.time()
 
         sg_config = Config()
         sg_config.behavior_generator.ownship_method = BehaviorGenerationMethod.ConstantSpeedAndCourse
@@ -46,7 +48,7 @@ if __name__ == "__main__":
         scenario_generator = ScenarioGenerator(sg_config)
         scenario_data = scenario_generator.generate(config_file=scenario_list[i])
         simulator = Simulator()
-        simulator.toggle_liveplot_visibility(True)
+        simulator.toggle_liveplot_visibility(False)
         output = simulator.run([scenario_data])
         print("done")
 
@@ -107,12 +109,13 @@ if __name__ == "__main__":
         folder_path = '/home/ragnarnw/Github/Plotting/Plotting_SR_2023/Clutter/'
         #folder_path_backup = '/home/ragnar/Github/Plotting_SR_2023/Backup/'
         file_name = ['Head_on', 'crossing_do_give_way', 'crossing_os_give_way', 'overtaking', 'overtaken', 'multi_ship']
+        #file_name = ['multi_ship']
         #file_name_backup = 'Test3_VIMMJIPDA'
         # file_name = 'Test3_KF'
         # file_name_backup = 'Test3_KF'
 
         # # 1000 funker ikke av en eller annen grunn, så holder meg til 500 enn så lenge
-        with open(folder_path + file_name[i], 'wb') as file:
+        with open(folder_path + file_name[i]+ "_c5", 'wb') as file:
             pickle.dump(output[0]['episode_simdata_list'], file)
 
         # with open(folder_path_backup + file_name_backup, 'wb') as file:
@@ -122,3 +125,9 @@ if __name__ == "__main__":
         # file_name_backup = 'Test1_termination_VIMMJIPDA'
         # with open(folder_path + file_name_backup, 'wb') as file:
         #     pickle.dump(output[0]['episode_simdata_list'], file)
+            
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        minutes, seconds = divmod(elapsed_time, 60)
+        print(f"--- {int(minutes)} minutes {seconds:.2f} seconds ---")
+        

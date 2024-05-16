@@ -279,6 +279,68 @@ def check_if_situation_is_risky_enough(
     return t_cpa < t_cpa_threshold and d_cpa < d_cpa_threshold
 
 
+def trajectory_from_waypoints_and_speed(
+    waypoints: np.ndarray, speed_plan: np.ndarray, dt: float, T: float
+) -> np.ndarray:
+    """Creates a simplistic trajectory from the waypoints and speed plan of the vessel.
+
+    Args:
+        waypoints (np.ndarray): Waypoint data (2 x n_waypoints).
+        speed_plan (np.ndarray): Speed plan data (1 x n_waypoints).
+        dt (float): Time step.
+        T (float): Total time.
+
+    Returns:
+        np.ndarray: Trajectory of the vessel on the form [x, y, U, chi] x n_samples.
+    """
+    p = waypoints[:, 0]
+    p_end = waypoints[:, -1]
+    n_wps = waypoints.shape[1]
+    n_samples = int(T / dt)
+    wp_leg = 0
+    traj = np.zeros((4, n_samples))
+    for k in range(n_samples):
+        speed = speed_plan[wp_leg]
+        if np.linalg.norm(p - p_end) < 10.0:
+            speed = 0.0
+
+        wp_idx = wp_leg + 1 if wp_leg < n_wps - 1 else wp_leg
+        alpha = np.arctan2(
+            waypoints[1, wp_idx] - waypoints[1, wp_idx - 1], waypoints[0, wp_idx] - waypoints[0, wp_idx - 1]
+        )
+
+        traj[0:2, k] = p
+        traj[2, k] = speed_plan[wp_leg]
+        traj[3, k] = alpha
+
+        p = p + speed * np.array([np.cos(alpha), np.sin(alpha)]) * dt
+
+        if np.linalg.norm(p - waypoints[:, wp_idx]) < 1.0 and wp_leg < n_wps - 1:
+            wp_leg += 1
+
+    return traj
+
+
+def compute_actual_vessel_pair_cpa(
+    traj_1: np.ndarray, traj_2: np.ndarray, dt: float
+) -> Tuple[float, float, np.ndarray]:
+    """Computes the closest point of approach (CPA) between two vessel trajectories.
+
+    Args:
+        traj_1 (np.ndarray): Trajectory of vessel 1 on the form [x, y, U, chi] x n_samples.
+        traj_2 (np.ndarray): Trajectory of vessel 2 on the form [x, y, U, chi] x n_samples.
+        dt (float): Time step.
+
+    Returns:
+        Tuple[float, float, np.ndarray]: The time to CPA, distance at CPA and corresponding CPA distance vector.
+    """
+    dist_vec_traj = traj_2[0:2, :] - traj_1[0:2, :]
+    distances = np.linalg.norm(dist_vec_traj, axis=0)
+    min_dist_idx = int(np.argmin(distances))
+    t_cpa = min_dist_idx * dt
+    return t_cpa, distances[min_dist_idx], dist_vec_traj[:, min_dist_idx]
+
+
 def compute_vessel_pair_cpa(
     p1: np.ndarray, v1: np.ndarray, p2: np.ndarray, v2: np.ndarray
 ) -> Tuple[float, float, np.ndarray]:
@@ -778,6 +840,33 @@ def convert_vxvy_state_to_sog_cog_state(xs: np.ndarray) -> np.ndarray:
         )
 
 
+def extract_do_list_from_do_array(do_array: np.ndarray) -> list:
+    """Extracts the dynamic obstacle list from the dynamic obstacle array (RL observation)
+    with a maximum number of dynamic obstacles.
+
+    Args:
+        do_array (np.ndarray): Dynamic obstacle array.
+
+    Returns:
+        list: List of dynamic obstacles.
+    """
+    do_list = []
+    assert do_array.ndim == 2, "Dynamic obstacle array must be 2D"
+    nx_do = do_array.shape[0]
+    max_num_do = do_array.shape[1]
+
+    for i in range(max_num_do):
+        if np.sum(do_array[:, i]) > 1.0:  # A proper DO entry has non-zeros in its vector
+            do_state = do_array[0:4, i]
+            do_length = do_array[4, i]
+            do_width = do_array[5, i]
+            do_cov = np.zeros((4, 4))
+            if nx_do > 6:
+                do_cov = do_array[6:, i].reshape((4, 4))
+            do_list.append((i, do_state, do_cov, do_length, do_width))
+    return do_list
+
+
 def convert_3dof_state_to_sog_cog_state(xs: np.ndarray) -> np.ndarray:
     """Converts from a state [x, y, psi, u, v, r]^T x N to [x, y, U, chi]^T x N.
 
@@ -789,13 +878,13 @@ def convert_3dof_state_to_sog_cog_state(xs: np.ndarray) -> np.ndarray:
     """
     if xs.ndim == 1:
         heading = xs[2]
-        crab_angle = 0.0  # np.arctan2(xs[4], xs[3])
+        crab_angle = np.arctan2(xs[4], xs[3])
         cog = heading + crab_angle
         speed = np.sqrt(xs[3] ** 2 + xs[4] ** 2)
         return np.array([xs[0], xs[1], speed, cog])
     else:
         heading = xs[2, :]
-        crab_angle = np.zeros(len(xs[2, :]))  # np.arctan2(xs[4, :], xs[3, :])
+        crab_angle = np.arctan2(xs[4, :], xs[3, :])
         cog = heading + crab_angle
         speed = np.sqrt(np.multiply(xs[3, :], xs[3, :]) + np.multiply(xs[4, :], xs[4, :]))
         return np.array([xs[0, :], xs[1, :], speed, cog])

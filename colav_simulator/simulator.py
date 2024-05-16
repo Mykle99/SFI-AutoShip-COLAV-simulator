@@ -7,9 +7,10 @@
 
     Author: Trym Tengesdal, Magne Aune, Joachim Miller
 """
+
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import colav_simulator.common.config_parsing as cp
 import colav_simulator.common.map_functions as mapf
@@ -22,6 +23,7 @@ import colav_simulator.viz.visualizer as viz
 import numpy as np
 import pandas as pd
 import seacharts.enc as senc
+import yaml
 from colav_simulator.core.ship import Ship
 
 np.set_printoptions(suppress=True, formatter={"float_kind": "{:.4f}".format})
@@ -44,26 +46,16 @@ class Config:
         )
         return config
 
+    @classmethod
+    def from_file(cls, config_file: Path):
+        assert config_file.exists(), f"Configuration file {config_file} does not exist."
+        with open(config_file, "r") as f:
+            config_dict = yaml.safe_load(f)
+        return cls.from_dict(config_dict)
+
 
 class Simulator:
     """Class for simulating collision avoidance/maritime vessel scenarios."""
-
-    config: Config
-    visualizer: viz.Visualizer
-
-    ownship: Ship
-    relevant_grounding_hazards: list  # Grounding hazards relevant for the own-ship
-    ship_list: list
-    disturbance: Optional[stochasticity.Disturbance]
-    enc: senc.ENC
-    sconfig: sc.ScenarioConfig
-    recent_sensor_measurements: list
-
-    t: float
-    t_start: float
-    t_end: float
-    dt: float
-    timestamp_start: int
 
     def __init__(
         self, config: Optional[Config] = None, config_file: Optional[Path] = dp.simulator_config, **kwargs
@@ -86,7 +78,22 @@ class Simulator:
         else:
             raise ValueError("No configuration file or configuration object provided.")
 
-        self.visualizer = viz.Visualizer(self._config.visualizer)
+        self.visualizer: viz.Visualizer = viz.Visualizer(self._config.visualizer)
+        self.config: Config = self._config
+
+        self.ownship: Ship = None
+        self.ship_list: List[Ship] = []
+        self.disturbance: Optional[stochasticity.Disturbance] = None
+        self.enc: senc.ENC = None
+        self.sconfig: sc.ScenarioConfig = None
+        self.relevant_grounding_hazards: list = []
+        self.recent_sensor_measurements: list = []
+
+        self.t = 0.0
+        self.t_start = 0.0
+        self.t_end = 0.0
+        self.dt = 0.0
+        self.timestamp_start = 0
 
     def toggle_liveplot_visibility(self, visible: bool) -> None:
         """Toggles the visibility of the live plot.
@@ -98,7 +105,7 @@ class Simulator:
 
     def initialize_scenario_episode(
         self,
-        ship_list: list,
+        ship_list: List[Ship],
         sconfig: sc.ScenarioConfig,
         enc: senc.ENC,
         disturbance: Optional[stochasticity.Disturbance] = None,
@@ -107,7 +114,7 @@ class Simulator:
         """Initializes the simulation through setting relevant internal state objects.
 
         Args:
-            - ship_list (list): 1 x n_ships array of configured Ship objects. Each ship
+            - ship_list (List[Ship]): 1 x n_ships array of configured Ship objects. Each ship
             is assumed to be properly configured and initialized to its initial state at
             the scenario start (t0).
             - sconfig (ScenarioConfig): Scenario episode configuration object.
@@ -140,6 +147,7 @@ class Simulator:
             self, 
             scenario_data_list: list, 
             colav_systems: Optional[list] = None,
+            terminate_on_collision_or_grounding: bool = True,
             batch_number: Optional[int] = None, 
             n_batches: Optional[int] = None,
     ) -> list:
@@ -148,6 +156,7 @@ class Simulator:
         Args:
             - scenario_data_list (list): Premade list of created/configured scenarios. Each entry contains a list of ship objects, scenario configuration objects and relevant ENC objects.
             - colav_systems (Optional[list]): List of tuples (ship ID, COLAV system) to use for the selected ships involved in the scenario, overrides the existing ones. Defaults to None.
+            - terminate_on_collision_or_grounding (bool): Whether to terminate the simulation if a collision or grounding occurs.
             - batch_number (Optional[int]): Batch number for multi-processing. Defaults to None.
             - n_batches (Optional[int]): Number of batches for multi-processing. Defaults to None.
 
@@ -196,7 +205,7 @@ class Simulator:
 
                 if self._config.verbose:
                     print(f"\rSimulator: Running scenario episode nr {actual_ep + 1}: {scenario_episode_file}...")
-                sim_data, ship_info, sim_times = self.run_scenario_episode()
+                sim_data, ship_info, sim_times = self.run_scenario_episode(terminate_on_collision_or_grounding)
                 if self._config.verbose:
                     print(
                         f"\rSimulator: Finished running through scenario episode nr {actual_ep + 1}: {scenario_episode_file}."
@@ -230,7 +239,7 @@ class Simulator:
             print("\rSimulator: Finished running through scenarios.")
         return scenario_simdata_list
 
-    def is_terminated(self, verbose: bool = False) -> bool:
+    def is_terminated(self, verbose: bool = False, terminate_on_collision_or_grounding: bool = True) -> bool:
         """Check whether the current own-ship state is a terminal state.
 
         Args:
@@ -239,9 +248,9 @@ class Simulator:
         Returns:
             bool: Whether the current own-ship state is a terminal state
         """
-        goal_reached = self.determine_ownship_goal_reached()
-        collided = self.determine_ownship_collision()
-        grounded = self.determine_ownship_grounding()
+        goal_reached = self.determine_ship_goal_reached(ship_idx=0)
+        collided = self.determine_ship_collision(ship_idx=0) and terminate_on_collision_or_grounding
+        grounded = self.determine_ship_grounding(ship_idx=0) and terminate_on_collision_or_grounding
         if verbose and collided:
             print(f"Collision at t = {self.t}!")
         if verbose and grounded:
@@ -264,8 +273,13 @@ class Simulator:
             print("Time limit reached!")
         return truncated
 
-    def run_scenario_episode(self) -> Tuple[pd.DataFrame, dict, np.ndarray]:
+    def run_scenario_episode(
+        self, terminate_on_collision_or_grounding: bool = True
+    ) -> Tuple[pd.DataFrame, dict, np.ndarray]:
         """Runs the simulator for a scenario episode specified by the ship object array, using a time step dt_sim.
+
+        Args:
+            terminate_on_collision_or_grounding (bool): Whether to terminate the simulation if a collision or grounding occurs.
 
         Returns: a tuple containing:
             - sim_data (DataFrame): Dataframe/table containing the ship simulation data.
@@ -288,7 +302,9 @@ class Simulator:
 
             self.visualizer.update_live_plot(self.t, self.enc, self.ship_list, self.recent_sensor_measurements[0])
 
-            terminated = self.is_terminated(verbose=self._config.verbose)
+            terminated = self.is_terminated(
+                verbose=self._config.verbose, terminate_on_collision_or_grounding=terminate_on_collision_or_grounding
+            )
             truncated = self.is_truncated(verbose=self._config.verbose)
             if terminated or truncated:
                 t_end = self.t
@@ -300,7 +316,7 @@ class Simulator:
         return pd.DataFrame(sim_data), ship_info, sim_times
 
     def step(self, remote_actor: bool = False) -> dict:
-        """Step through the simulation by one time step, using the specified action for the own-ship.
+        """Step through the simulation by one time step.
 
         Args:
             remote_actor (bool, optional): Whether the own-ship is controlled by a remote actor, i.e. references are set externally from the Ship object. Defaults to False.
@@ -309,7 +325,6 @@ class Simulator:
             dict: Dictionary containing the current time step simulation data for each ship and the disturbance data if applicable.
         """
         sim_data_dict = {}
-        true_do_states = mhm.extract_do_states_from_ship_list(self.t, self.ship_list)
 
         disturbance_data: Optional[stochasticity.DisturbanceData] = None
         if self.disturbance is not None:
@@ -319,6 +334,7 @@ class Simulator:
             sim_data_dict["wind"] = disturbance_data.wind
             sim_data_dict["waves"] = disturbance_data.waves
 
+        true_do_states = mhm.extract_do_states_from_ship_list(self.t, self.ship_list)
         for i, ship_obj in enumerate(self.ship_list):
             relevant_true_do_states = mhm.get_relevant_do_states(true_do_states, i)
             tracks, sensor_measurements_i = ship_obj.track_obstacles(self.t, self.dt, relevant_true_do_states)
@@ -332,6 +348,9 @@ class Simulator:
                 if not (i == 0 and remote_actor):  # Skip own-ship planning step if controlled by remote actor
                     ship_obj.plan(t=self.t, dt=self.dt, do_list=tracks, enc=self.enc, w=disturbance_data)
 
+                if i > 0 and self.determine_ship_grounding(i):  # Make grounded obstacle ships stop
+                    ship_obj.set_references(np.zeros((9, 1)))
+
             sim_data_dict[f"Ship{i}"] = ship_obj.get_sim_data(self.t, self.timestamp_start)
             sim_data_dict[f"Ship{i}"]["sensor_measurements"] = sensor_measurements_i # self.recent_sensor_measurements[i]
             sim_data_dict[f"Ship{i}"]["colav"] = ship_obj.get_colav_data()
@@ -342,56 +361,94 @@ class Simulator:
         self.t += self.dt
         return sim_data_dict
 
-    def determine_ownship_collision(self) -> bool:
-        """Determines whether the own-ship is in a collision state.
+    def distance_to_nearby_vessels(self, ship_idx: int = 0) -> np.ndarray:
+        """Calculates the distance to nearby vessels for a ship.
+
+        Args:
+            ship_idx (int, optional): Index of the ship to calculate the distance to nearby vessels for. Defaults to 0.
 
         Returns:
-            bool: True if the own-ship is in a collision state, False otherwise.
+            np.ndarray: Array containing the distances to nearby vessels.
         """
-        ownship_state = self.ownship.csog_state
-        for _, ship_obj in enumerate(self.ship_list[1:]):
-            if ship_obj.t_start <= self.t:
-                ship_state = ship_obj.csog_state
-                d2ship = np.linalg.norm(ownship_state[:2] - ship_state[:2])
-                if d2ship <= self.ownship.length / 2.0:
-                    return True
+        ship_state = self.ship_list[ship_idx].csog_state
+        distances = []
+        for i, other_ship_obj in enumerate(self.ship_list):
+            if i == ship_idx:
+                continue
+            if other_ship_obj.t_start <= self.t:
+                other_ship_state = other_ship_obj.csog_state
+                distances.append(np.linalg.norm(ship_state[:2] - other_ship_state[:2]))
+            else:
+                distances.append(1e12)
+        assert len(distances) == len(self.ship_list) - 1
+        return np.array(distances)
+
+    def determine_ship_collision(self, ship_idx: int = 0) -> bool:
+        """Determines whether a ship is in a collision state.
+
+        Args:
+            ship_idx (int, optional): Index of the ship to check for collision. Defaults to 0.
+
+        Returns:
+            bool: True if the ship is in a collision state, False otherwise.
+        """
+        distances = self.distance_to_nearby_vessels(ship_idx)
+        other_ship_list = [other_ship_obj for i, other_ship_obj in enumerate(self.ship_list) if i != ship_idx]
+        for i, other_ship_obj in enumerate(other_ship_list):
+            if distances[i] <= self.ship_list[ship_idx].length / 2.0:  # + other_ship_obj.length / 2.0:
+                return True
         return False
 
-    def determine_ownship_grounding(self) -> bool:
-        """Determines whether the own-ship is in a grounding state.
+    def distance_to_grounding(self, ship_idx: int = 0) -> float:
+        """Calculates the distance to grounding for a ship.
+
+        Args:
+            ship_idx (int, optional): Index of the ship to calculate the distance to grounding for. Defaults to 0.
 
         Returns:
-            bool: True if the own-ship is in a grounding state, False otherwise.
+            float: Distance to grounding for the ship.
         """
-        ownship_state = self.ownship.csog_state
-        d2land = mapf.min_distance_to_hazards(self.relevant_grounding_hazards, ownship_state[1], ownship_state[0])
-        return d2land <= self.ownship.length / 2.0
+        ship_state = self.ship_list[ship_idx].csog_state
+        d2land = mapf.min_distance_to_hazards(self.relevant_grounding_hazards, ship_state[1], ship_state[0])
+        return d2land
 
-    def determine_ownship_goal_reached(self) -> bool:
-        """Determines whether the own-ship has reached its goal.
+    def determine_ship_grounding(self, ship_idx: int = 0) -> bool:
+        """Determines whether a ship is in a grounding state.
+
+        Args:
+            ship_idx (int, optional): Index of the ship to check for grounding. Defaults to 0.
+
+        Returns:
+            bool: True if the ship is in a grounding state, False otherwise.
+        """
+        d2grounding = self.distance_to_grounding(ship_idx)
+        return d2grounding <= self.ship_list[ship_idx].length / 2.0
+
+    def determine_ship_goal_reached(self, ship_idx: int = 0) -> bool:
+        """Determines whether the ship has reached its goal.
 
         Returns:
             bool: True if the own-ship has reached its goal, False otherwise.
         """
-        if self.ownship.goal_csog_state.size > 0:
-            goal_state = self.ownship.goal_csog_state
-        elif self.ownship.waypoints.size > 1:
+        if self.ship_list[ship_idx].goal_csog_state.size > 0:
+            goal_state = self.ship_list[ship_idx].goal_csog_state
+        elif self.ship_list[ship_idx].waypoints.size > 1:
             goal_state = self.ownship.waypoints[:, -1]
         else:
             raise ValueError(
                 "Either the goal pose must be provided, or a sufficient number of waypoints for the ship to follow!"
             )
-        # Check if the own-ship is within the goal region
-        ownship_state = self.ownship.csog_state
-        d2goal = np.linalg.norm(ownship_state[:2] - goal_state[:2])
+        ship_state = self.ship_list[ship_idx].csog_state
+        d2goal = np.linalg.norm(ship_state[:2] - goal_state[:2])
+        scale_factor = 4.0
 
         # Check if the last wp has been passed
-        d_0wp_vec = self.ownship.waypoints[:, -1] - self.ownship.csog_state[0:2]
-        L_wp_segment = self.ownship.waypoints[:, -1] - self.ownship.waypoints[:, -2]
+        d_0wp_vec = self.ship_list[ship_idx].waypoints[:, -1] - self.ship_list[ship_idx].csog_state[0:2]
+        L_wp_segment = self.ship_list[ship_idx].waypoints[:, -1] - self.ship_list[ship_idx].waypoints[:, -2]
         wp_segment = mf.normalize_vec(L_wp_segment)
         segment_passed = wp_segment.dot(d_0wp_vec) < np.cos(np.deg2rad(90.0))
 
-        return True if d2goal <= self.ownship.length or segment_passed else False
+        return True if d2goal <= self.ship_list[ship_idx].length * scale_factor or segment_passed else False
 
 
 def extract_valid_sensor_measurements(t: float, recent_sensor_measurements: list, sensor_measurements_i: list) -> list:

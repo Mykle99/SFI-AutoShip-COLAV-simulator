@@ -7,6 +7,7 @@
 
     Author: Trym Tengesdal
 """
+
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 from typing import Optional, Tuple
@@ -47,29 +48,11 @@ class LOSGuidanceParams:
 
 
 @dataclass
-class KTPGuidanceParams:
-    """Parameter class for the Kinematic Trajectory Planner.
-
-    Parameters:
-        epsilon (float): Small value to avoid division by zero in derivative calculation.
-    """
-
-    epsilon: float = 0.00001
-
-    @classmethod
-    def from_dict(cls, config_dict: dict):
-        return KTPGuidanceParams(**config_dict)
-
-    def to_dict(self):
-        return asdict(self)
-
-
-@dataclass
 class Config:
     """Configuration class for managing guidance method parameters."""
 
     los: Optional[LOSGuidanceParams] = field(default_factory=lambda: LOSGuidanceParams())
-    ktp: Optional[KTPGuidanceParams] = None
+    ktp: Optional[bool] = None
 
     @classmethod
     def from_dict(cls, config_dict: dict):
@@ -79,7 +62,7 @@ class Config:
             config.ktp = None
 
         if "ktp" in config_dict:
-            config.ktp = cp.convert_settings_dict_to_dataclass(KTPGuidanceParams, config_dict["ktp"])
+            config.ktp = True
             config.los = None
 
         return config
@@ -91,7 +74,7 @@ class Config:
             config_dict["los"] = self.los.to_dict()
 
         if self.ktp is not None:
-            config_dict["ktp"] = self.ktp.to_dict()
+            config_dict["ktp"] = ""
 
         return config_dict
 
@@ -123,7 +106,7 @@ class GuidanceBuilder:
         if config and config.los:
             return LOSGuidance(config.los)
         elif config and config.ktp:
-            return KinematicTrajectoryPlanner(config.ktp)
+            return KinematicTrajectoryPlanner()
         else:
             return None
 
@@ -133,15 +116,6 @@ class KinematicTrajectoryPlanner(IGuidance):
 
     The main functionality converts a path (described by waypoints) and speed plan into a continuous
     trajectory, using cubic splines, for which 3DOF references in position, speed and acceleration are generated.
-
-    Important internal variables:
-        s (float): Keeps track of the current path variable/state of
-        reference vehicle along the trajectory.
-        init (bool): Flag to indicate if the trajectory has been initialized.
-        x_spline (BSpline): Spline for x setpoints.
-        y_spline (BSpline): Spline for y setpoints.
-        heading_spline (PchipInterpolator): Spline for heading setpoint. Usage of piecewise cubic Hermite interpolator to reduce overshoot.
-        speed_spline (PchipInterpolator): Spline for speed setpoint. Usage of piecewise cubic Hermite interpolator to reduce overshoot.
     """
 
     _x_spline: interp.BSpline
@@ -149,13 +123,9 @@ class KinematicTrajectoryPlanner(IGuidance):
     _heading_spline: interp.PchipInterpolator
     _speed_spline: interp.PchipInterpolator
 
-    def __init__(self, params: Optional[KTPGuidanceParams] = None) -> None:
-        if params:
-            self._params: KTPGuidanceParams = params
-        else:
-            self._params = KTPGuidanceParams()
-
-        self._s: float = 0.0
+    def __init__(self) -> None:
+        self._epsilon: float = 0.00001
+        self._s: float = 0.0001
         self._s_dot: float = 0.0
         self._s_ddot: float = 0.0
         self._init: bool = False
@@ -218,12 +188,6 @@ class KinematicTrajectoryPlanner(IGuidance):
         else:
             linspace = np.linspace(0.0, 1.0, n_wps)
 
-        smoothing = 0.1
-        t_x, c_x, k_x = interp.splrep(linspace, waypoints[0, :], s=smoothing, k=3)
-        self._x_spline = interp.BSpline(t_x, c_x, k_x, extrapolate=False)
-
-        t_y, c_y, k_y = interp.splrep(linspace, waypoints[1, :], s=smoothing, k=3)
-        self._y_spline = interp.BSpline(t_y, c_y, k_y, extrapolate=False)
         self._speed_spline = interp.PchipInterpolator(linspace, speed_plan)
 
         order = 3
@@ -231,6 +195,8 @@ class KinematicTrajectoryPlanner(IGuidance):
             x_arc_spline, y_arc_spline, arc_lengths = mhm.create_arc_length_spline(
                 waypoints[0, :].tolist(), waypoints[1, :].tolist()
             )
+            n_points = len(arc_lengths)
+            smoothing = 0.005 * (n_points - np.sqrt(2 * n_points))
             expanded_x_values = x_arc_spline(arc_lengths)
             expanded_y_values = y_arc_spline(arc_lengths)
             t_x, c_x, k_x = interp.splrep(arc_lengths, expanded_x_values, s=smoothing, k=order)
@@ -246,12 +212,20 @@ class KinematicTrajectoryPlanner(IGuidance):
             self._heading_waypoints = mf.unwrap_angle_array(np.arctan2(y_der_values, x_der_values))
             self._heading_spline = interp.PchipInterpolator(arc_lengths, self._heading_waypoints)
         else:
+            n_points = len(linspace)
+            smoothing = n_points - np.sqrt(2 * n_points)  # default value
+            t_x, c_x, k_x = interp.splrep(linspace, waypoints[0, :], s=smoothing, k=order)
+            self._x_spline = interp.BSpline(t_x, c_x, k_x, extrapolate=False)
+
+            t_y, c_y, k_y = interp.splrep(linspace, waypoints[1, :], s=smoothing, k=order)
+            self._y_spline = interp.BSpline(t_y, c_y, k_y, extrapolate=False)
+
             x_der_values = self._x_spline(linspace, 1)
             y_der_values = self._y_spline(linspace, 1)
             self._heading_waypoints = mf.unwrap_angle_array(np.arctan2(y_der_values, x_der_values))
             self._heading_spline = interp.PchipInterpolator(linspace, self._heading_waypoints)
 
-        self.plot_reference_trajectory(waypoints, times)
+        # self.plot_reference_trajectory(waypoints, times)
         return self._x_spline, self._y_spline, self._heading_spline, self._speed_spline, final_arc_length
 
     def update_path_variable(self, dt: float) -> None:
@@ -332,18 +306,16 @@ class KinematicTrajectoryPlanner(IGuidance):
 
     def _compute_path_variable_derivatives(self, s: float) -> Tuple[float, float]:
         s_dot = self._speed_spline(s) / np.sqrt(
-            self._params.epsilon + np.power(self._x_spline(s, 1), 2.0) + np.power(self._y_spline(s, 1), 2.0)
+            self._epsilon + np.power(self._x_spline(s, 1), 2.0) + np.power(self._y_spline(s, 1), 2.0)
         )
 
         s_ddot = s_dot * (
             self._speed_spline(s, 1)
-            / np.sqrt(self._params.epsilon + np.power(self._x_spline(s, 1), 2.0) + np.power(self._y_spline(s, 1), 2.0))
+            / np.sqrt(self._epsilon + np.power(self._x_spline(s, 1), 2.0) + np.power(self._y_spline(s, 1), 2.0))
             - self._speed_spline(s)
             * (self._x_spline(s, 1) * self._x_spline(s, 2) + self._y_spline(s, 1) * self._y_spline(s, 2))
             / np.power(
-                np.sqrt(
-                    self._params.epsilon + np.power(self._x_spline(s, 1), 2.0) + np.power(self._y_spline(s, 1), 2.0)
-                ),
+                np.sqrt(self._epsilon + np.power(self._x_spline(s, 1), 2.0) + np.power(self._y_spline(s, 1), 2.0)),
                 3.0,
             )
         )

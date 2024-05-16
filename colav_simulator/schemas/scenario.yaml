@@ -101,7 +101,7 @@ map_size:
     type: float
 
 map_origin_enu:
-  required: False
+  required: True
   type: list
   maxlength: 2
   minlength: 2
@@ -165,47 +165,38 @@ max_dist_between_ships:
   type: float
   nullable: True
 
-rl_observation_type:
+rl:
   required: False
   type: dict
   nullable: True
   schema:
-    tuple_observation:
-      required: False
-      type: list
-      minlength: 1
+    observation_type:
+      required: True
+      type: dict
+      nullable: True
       schema:
-        type: string
-    navigation_3dof_state_observation:
-      required: False
+        tuple_observation:
+          required: False
+          excludes: [dict_observation]
+          type: list
+          minlength: 1
+          schema:
+            type: string
+        dict_observation:
+          excludes: [tuple_observation]
+          required: False
+          type: list
+          minlength: 1
+          schema:
+            type: string
+    action_type:
+      required: True
       type: string
-      empty: True
-    navigation_csog_state_observation:
-      required: False
-      type: string
-      empty: True
-    lidar_like_observation:
-      required: False
-      type: string
-      empty: True
-    tracking_observation:
-      required: False
-      type: string
-      empty: True
-    time_observation:
-      required: False
-      type: string
-      empty: True
-    dict_observation:
-      required: False
-      type: list
-      minlength: 1
-      schema:
-        type: string
-rl_action_type:
-  required: False
-  type: string
-  nullable: True
+      nullable: True
+    action_sample_time:
+        required: True
+        type: float
+
 
 filename:
   required: False
@@ -226,10 +217,10 @@ stochasticity:
           required: True
           type: boolean
         initial_speed:
-          required: True
+          required: False
           type: float
         initial_direction:
-          required: True
+          required: False
           type: float
         speed_range:
           required: True
@@ -487,7 +478,7 @@ ship_list:
         schema:
           pid:
             type: dict
-            excludes: [flsh, pass_through_cs, csog, pass_through_inputs]
+            excludes: [flsc, pass_through_cs, csog, pass_through_inputs]
             schema:
               wn:
                 required: True
@@ -513,7 +504,7 @@ ship_list:
                 schema:
                   type: float
                   min: 0.0
-          flsh:
+          flsc:
             type: dict
             excludes: [pid, pass_through_cs, pass_through_inputs, csog]
             schema:
@@ -525,15 +516,15 @@ ship_list:
                 required: True
                 type: float
                 min: 0.0
-              K_p_psi:
+              K_p_chi:
                 required: True
                 type: float
                 min: 0.0
-              K_d_psi:
+              K_d_chi:
                 required: True
                 type: float
                 min: 0.0
-              K_i_psi:
+              K_i_chi:
                 required: True
                 type: float
                 min: 0.0
@@ -545,21 +536,21 @@ ship_list:
                 required: True
                 type: float
                 min: 0.0
-              max_psi_error_int:
+              max_chi_error_int:
                 required: True
                 type: float
                 min: 0.0
-              psi_error_int_threshold:
+              chi_error_int_threshold:
                 required: True
                 type: float
                 min: 0.0
           pass_through_cs:
             type: string
             empty: True
-            excludes: [pid, flsh, csog, pass_through_inputs]
+            excludes: [pid, flsc, csog, pass_through_inputs]
           pass_through_inputs:
             type: dict
-            excludes: [pid, flsh, pass_through_cs, csog]
+            excludes: [pid, flsc, pass_through_cs, csog]
             schema:
               rudder_propeller_mapping:
                 required: True

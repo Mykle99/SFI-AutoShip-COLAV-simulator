@@ -91,6 +91,32 @@ class TelemetronParams:
     r_max: float = float(np.deg2rad(15))
     U_min: float = 0.0
     U_max: float = 10.0
+    A_Fw: float = 3.0 * 1.5  # guesstimate of frontal area
+    A_Lw: float = 8.0 * 1.5  # guesstimate of lateral area
+    rho_air: float = 1.225  # Density of air
+    CD_l_AF_0: float = 0.55  # Longitudinal resistance used to compute wind coefficients in wind model
+    CD_l_AF_pi: float = 0.65
+    CD_t: float = 0.85  # Transversal resistance used to compute wind coefficients in wind model
+    delta_crossforce: float = 0.60  # Cross-force parameter
+    s_L: float = 0.0  # x-coordinate of transverse prject area A_Lw wrt the main section
+
+    # NB! Very crude assumed/guessed values.
+    A_Fw: float = 3.5 * width  # Guess 3.5 m height
+    A_Lw: float = 0.45 * 3.5 * length  # Guess 3.5 m height, the cab covers about half of the length, front is open
+    rho_air: float = 1.225  # Density of air
+    CD_l_AF_0: float = (
+        0.55  # Guess longitudinal resistance used to compute wind coefficients in wind model (gamma_w = 0). Table 10.3 Fossen 2011: Speed boat, assumed OK for this RIB
+    )
+    CD_l_AF_pi: float = (
+        0.60  # Guess longitudinal resistance used to compute wind coefficients in wind model (gamma_w = pi) Table 10.3 Fossen 2011: Speed boat, assumed OK for this RIB
+    )
+    CD_t: float = (
+        0.85  # Guess transversal resistance used to compute wind coefficients in wind model. Table 10.3 Fossen 2011: Research vessel, chosen due to expectation of lower sim speeds
+    )
+    delta_crossforce: float = (
+        0.60  # Guess cross-force parameter. Table 10.3 Fossen 2011: Sped boat, assumed OK for this RIB
+    )
+    s_L: float = -1.0  # Guess x-coordinate of the centre of "A_lw", vessel is asymmetric, see sideprofile
 
     # NB! Very crude assumed/guessed values.
     A_Fw: float = 3.5 * width  # Guess 3.5 m height
@@ -483,6 +509,33 @@ class Telemetron(IModel):
         eta = xs[0:3]
         eta[2] = mf.wrap_angle_to_pmpi(eta[2])
         nu = xs[3:6]
+
+        V_c = 0.0
+        beta_c = 0.0
+        V_w = 0.0
+        beta_w = 0.0
+        tau_wind = np.zeros(3)
+        if w is not None and "speed" in w.wind:
+            V_w = w.wind["speed"]
+            beta_w = w.wind["direction"]
+            # Compute wind forces and moments
+            nu_w = mf.Rmtrx(eta[2]).T @ np.array([V_w * np.cos(beta_w), V_w * np.sin(beta_w), 0.0])
+            u_rw = nu[0] - nu_w[0]
+            v_rw = nu[1] - nu_w[1]
+            V_rw = np.sqrt(u_rw**2 + v_rw**2)
+            gamma_rw = -np.arctan2(v_rw, u_rw)
+            gamma_w = eta[2] - beta_w - np.pi  # wind angle of attack
+            gamma_w = mf.wrap_angle_to_pmpi(gamma_w)
+            tau_wind = self.compute_wind_forces(V_rw, gamma_rw)
+        if w is not None and "speed" in w.currents:
+            V_c = w.currents["speed"]
+            beta_c = w.currents["direction"]
+
+        # Current in BODY frame
+        nu_c = mf.Rmtrx(eta[2]).T @ np.array([V_c * np.cos(beta_c), V_c * np.sin(beta_c), 0.0])
+        nu_w = mf.Rmtrx(eta[2]).T @ np.array([V_w * np.cos(beta_w), V_w * np.sin(beta_w), 0.0])
+        nu_r = nu - nu_c
+        nu_c_dot = np.array([nu[2] * nu_c[1], -nu[2] * nu_c[0], 0.0])
 
         u[0] = mf.sat(u[0], self._params.Fx_limits[0], self._params.Fx_limits[1])
         u[1] = mf.sat(u[1], self._params.Fy_limits[0], self._params.Fy_limits[1])

@@ -13,8 +13,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Optional, Tuple
 
-import colav_evaluation_tool.vessel as colav_eval_vessel_data
+import colav_simulator.common.math_functions as mf
 import colav_simulator.common.miscellaneous_helper_methods as mhm
+import colav_simulator.common.vessel_data as vd
 import colav_simulator.core.colav.colav_interface as ci
 import colav_simulator.core.controllers as controllers
 import colav_simulator.core.guidances as guidances
@@ -498,16 +499,24 @@ class Ship(IShip):
         """
         self._references = references.reshape((9, 1))
 
-    def set_colav_system(self, colav: Any | ci.ICOLAV) -> None:
+    def set_colav_system(self, colav: ci.ICOLAV) -> None:
         """Sets the COLAV system to be used by the ship.
 
         Args:
-            colav (Any | ICOLAV): COLAV system, must implement the ICOLAV interface.
+            colav (ICOLAV): COLAV system, must implement the ICOLAV interface.
         """
         self._colav = colav
 
         if self._guidance is not None:
             self._guidance = None
+
+    def set_controller(self, controller: controllers.IController) -> None:
+        """Sets the controller to be used by the ship.
+
+        Args:
+            controller (IController): Controller to be used.
+        """
+        self._controller = controller
 
     def get_colav_data(self) -> dict:
         """Returns COLAV related data for the ship, if any.
@@ -584,7 +593,7 @@ class Ship(IShip):
 
     def transfer_vessel_ais_data(
         self,
-        vessel: colav_eval_vessel_data.VesselData,
+        vessel: vd.VesselData,
         use_ais_trajectory: bool = True,
         t_start: Optional[float] = None,
         t_end: Optional[float] = None,
@@ -599,10 +608,9 @@ class Ship(IShip):
         not considered.
 
         Args:
-            vessel (VesselData): AIS data of the ship.
+            vessel (vd.VesselData): AIS data of the ship, data structure from the COLAV evaluation tool.
             use_ais_trajectory (bool, optional): Use historical AIS trajectory or not.
         """
-
         self.set_initial_state(
             np.array(
                 [
@@ -709,6 +717,13 @@ class Ship(IShip):
             return self._state[3]
         else:  # self._state.size == 6
             return self._state[2]
+
+    @property
+    def course(self):
+        if self._state.size == 4:
+            return self._state[3]
+        else:  # self._state.size == 6
+            return mf.wrap_angle_to_pmpi(self._state[2] + np.arctan2(self._state[4], self._state[3]))
 
     @property
     def waypoints(self) -> np.ndarray:

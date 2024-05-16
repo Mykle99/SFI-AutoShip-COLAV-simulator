@@ -5,14 +5,71 @@ This README details how the PSB-MPC can be utilized as a COLAV system within the
 [![platform](https://img.shields.io/badge/platform-linux-lightgrey)]()
 [![python version](https://img.shields.io/badge/python-3.11-blue)]()
 
-## 1. Setup and Test the colav-simulator on the main branch
-First, before you start this setup procedure, ensure that your setup of the colav-simulator works by completing the setup procedures and tests which are outlined on the main branch.
+<p align="center">
+    <img src="https://github.com/NTNU-Autoship-Internal/colav_simulator/blob/main/teaser.gif?raw=true" width="1000px"><br/>
+    <em>An episode sample from the COLAVEnvironment.</em>
+</p>
 
 
-## 2. CMake and Python Environment
-If you do not already have CMake or a virtual Python environment set up on your system, run the following commands. Ensure that your CMake version is greater than or equal to 3.22, and that you are using Python 3.11. You should either use the Python environment you already set up to use in the colav-simulator or set up a new one that mirrors the one you are already using on the main branch.
+<p align="center">
+    <img src="https://github.com/NTNU-Autoship-Internal/colav_simulator/blob/main/scenarios/example_img/aalesund_random.pdf" width="500px"><br/>
+    <em>Simulation screenshot.</em>
+</p>
 
+## Citation
+If you are using the `colav_simulator` in your work, please use the following citation:
+```
+@Article{Tengesdal2023sfse,
+  author  = {Trym Tengesdal and Tor A. Johansen},
+  journal = {7th IEEE Conference on Control Technology and Applications (CCTA)},
+  title   = {Simulation Framework and Software Environment for Evaluating Automatic Ship Collision Avoidance Algorithms},
+  year={2023},
+  volume={},
+  number={},
+  pages={186-193},
+  doi={10.1109/CCTA54093.2023.10252863},
+}
+```
 
+If you are using `RRTs` for ship behavior generation in your work, please also use the following citation:
+```
+@Article{Tengesdal2024csrrt,
+  title={A Comparative Study of Rapidly-exploring Random Tree Algorithms Applied to Ship Trajectory Planning and Behavior Generation},
+  author={Tengesdal, Trym and Pedersen, Tom Arne and Johansen, Tor Arne},
+  journal={arXiv preprint arXiv:2403.01194},
+  year={2024}
+}
+```
+
+## Dependencies
+Are all outlined in setup.cfg. Non-pip packages to install are
+
+- seacharts: https://github.com/trymte/seacharts for ENC support
+- rrt-rs: https://github.com/NTNU-Autoship-Internal/rrt-rs optionally for ship behavior generation
+- colav_evaluation_tool: https://github.com/trymte/colav_evaluation_tool (optional dependency only for the `test_simulation_and_evaluation.py` test file)
+
+## Generic Install Instructions
+`seacharts` and the `colav_evaluation_tool` (optional) are non-pip package dependencies in the simulator. Install these first as editable packages first using `pip install -e .` in their respective root folders. For `rrt-rs` (also optional), follow the install instructions at <https://github.com/NTNU-Autoship-Internal/rrt-rs>. Then, install this simulator package using the same `pip install -e .` command inside the `colav_simulator` root folder. All of these packages should be installed using the same Python environment (e.g. a virtual or Conda environment).
+
+To use `seacharts` in the simulator, you should download `.gdb` files from <https://kartkatalog.geonorge.no> in UTM 32 or 33 (see <https://github.com/trymte/seacharts> for instructions), and put into the `data/external` folder in the seacharts package directory. Otherwise, the module will not find any ENC data to use.
+
+If you get troubles installing `gdal`, this might be due to:
+- The native `gdal`library not being installed, see e.g. <https://github.com/OSGeo/gdal/issues/2166>
+- It not being installed correctly, maybe you need install from source or fix the gdal-version (see e.g. <https://stackoverflow.com/questions/34408699/having-trouble-installing-gdal-for-python> or <https://github.com/OSGeo/gdal/issues/2827>).
+
+If you get troubles with import errors caused by not finding dependencies such as fiona, try to reinstall the dependencies causing error.
+
+Test the installation by running any of the files under `tests/`, e.g.
+```
+python3 tests/test_ship.py
+```
+use these and the examples to get familiar with the simulator.
+
+## Mac OS Apple Slicon Installation
+
+Install Conda Miniforge from https://github.com/conda-forge/miniforge
+
+Create a conda virtual environment, e.g. with python 3.10
 ```bash
 sudo apt install cmake
 cmake --version
@@ -70,11 +127,125 @@ cd smile
 ## 6. Compiling the Interface/Wrapper: cpp_to_py_interfaces
 The last step is to compile the interface (which itself compiles the PSB-MPC and the IM code). Whenever changes are made to the C++ code, that is the [pybind_im_and_psbmpc interface](https://github.com/NTNU-Autoship-Internal/pybind_im_and_psbmpc/tree/main), the [Collision Avoidance algorithm repository](https://github.com/NTNU-Autoship-Internal/thecolavrepo), or the [Ship Intention Inference repository](https://github.com/NTNU-Autoship-Internal/ship_intention_inference), the code must be recompiled. To compile the code navigate to the `/cpp_to_py_interfaces` directory in the colav-simulator. If CMake finds the wrong Python version you can try to use `cmake -S . -B build -DPython_EXECUTABLE=$(which python)` instead of `cmake -S . -B build`.
 
- ```bash
-cd ../../../../ # cd to cpp_to_py_interfaces
-cmake -S . -B build 
-cmake --build build
+```bash
+git checkout main   # make sure we have the latest
+git pull            # version of main locally
+git checkout feature/name_of_feature
+git pull # in case you or someone else made changes remotely
+git merge main # This attempts to merge `main` into `feature/name_of_feature`
+# At this point conflicts might arise which you have to solve.
 ```
 
-## Testing the PSB-MPC
-A test file, `test_psbmpc.py`, can be found inside the `/tests` directory of the colav-simulator. Run this to verify that your installation has been successful.
+Now you can perform the tests.
+
+After the tests have been completed, you can initiate a pull request on github, where eventually the changes will be merged to `main`.
+
+#### Pull request
+
+Go to the `colav_simulator` repo on <https://github.com> and navigate to your branch (`feature/name_of_feature`).
+In the status bar above the commit message there is a link for _Pull request_.
+Click that and describe your feature.
+Assign people to it to review the changes, and create the pull request.
+
+The pull request should now be reviewed by someone, and if it is ok, it will be merged into `main`.
+Congratulations! It is now safe to delete the feature branch, which is strongly encouraged in order to keep the repository tidy.
+
+
+## Main modules in the repository
+
+Each main module mostly have their own test files, to enable easier debug/fixing and also for making yourself familiar with the code. When developing new modules, you are encouraged to simultaneously develop test files for these, such that yourself and others more conveniently can fix/debug and test the modules separately.
+
+A core concept is the usage of Cerberus for configuration validation, where the validation schemas are used to verify configuration keys and fail fast if erroneous settings are provided. Furthermore, another core concept is the usage of dataclasses for keeping parameters and configuration objects. Each scope (models, guidances, ship, etc..) have its own `Config` object containing its local configuration parameters. This leads to better readability of the code by keeping all aspects of a given subsystem in its own scope, as opposed to passing global configuration objects everywhere. Dataclasses also increases readability and reduces bugs related to specifying wrong dictionary string keys that would happen when only using dictionaries for configuration settings.
+
+The following describes the main modules superficially. Rely mainly on the code itself for the documentation.
+
+### COLAVEnvironment
+
+Gymnasium-wrapper for the simulation framework. See the source code for available rewards, actions and observations that can be used.
+
+### Simulator
+
+The simulator runs through a set of scenarios, each consisting of `n_episodes` specified from the config, visualizes these and saves the results. The scenarios can be generated through a `ScenarioConfig` object, or loaded from file using an existing scenario definition (examples under `scenarios/`).
+
+The simulator is configured using the `simulator.yaml` config file.
+
+### Scenario Generator
+
+The scenario generator is used by the simulator to create new scenarios for COLAV testing with 1+ ships. The main method is the `generate()` function, which generates a scenario from a scenario config file, which is converted into a `ScenarioConfig` object. An Electronic Navigational Chart object (from Seacharts) is used to define the environment. The `n_episodes` (defaults to 1) parameter is used to facilitate Monte Carlo simulation when using random data, and one can use an `EpisodeGenerationConfig` for further MC specifications.
+
+Scenarios are configured through a scenario `.yaml` file as e.g. the example `head_on.yaml` file under `scenarios` in the root folder. Look at predefined scenario files and the `schemas` folder under the package source code for further clues constraints/tips on how to write a new scenario config files.
+
+Seacharts is used to provide access to Electronic Navigational Charts, and an `ENC` object is used inside the `ScenarioGenerator` class for this. One must here make sure that the seacharts package is properly setup with `.gdb` data in the `data/external` folder of the package, with correctly matching `UTM` zone for the chart data. An example default `seacharts.yaml`config file for the module is found under `config/`. One can specify map data, map origin, map size etc. for the ENC object from the scenario `.yaml`config file.
+
+Troubles with "freezing" when you generate a scenario? Check if you have specified `new_load_of_map_data=True`in the scenario configuration file. If this is false, and the map data is not loaded/wrong data is used, errors can happen.
+
+In addition to random waypoint generation and/or straight line motion generation for the own-ship and/or target ships through the `BehaviorGenerator` class, the `rrt-rs` library can optionally be used for generating random ship behaviors, where Rapidly-exploring Random Trees (RRTs) are built for each ship initial state. See the source code for the `BehaviorGenerator` for more information.
+
+NOTE: The random generation of scenarios (poses, waypoints, speed plans etc.) are not guaranteed to succeed every time, especially since a finite number of iterations are considered in sampling procedures (for time and robustness reasons). Many edge cases can occur that makes a particular ship-ship encounter scenario unrealistic or not interesting. This makes it important that you check the generated scenarios.
+
+### Visualizer
+
+Class responsible for visualizing scenarios run through by the Simulator, and visualizing/saving the results from these. A basic live plotting feature when simulating scenarios is available. The class can, as most other main modules, be configured from the example simulator configuration file under `config/`.
+
+Note that the visualizer uses Matplotlib, and scales badly with a large number of vessels and plot data. Use with care.
+
+### Ship
+The Ship class simulates the behaviour of an individual ship and adheres to the `IShip` interface, which necessitates that the ship class provides a:
+
+- `forward(dt: float, w = Optional[DisturbanceData] = None) -> np.ndarray` function that allows simple forward simulation of the vessel, with disturbance consideration if data is available.
+- `plan(t: float, dt: float, do_list: list, enc: Optional[ENC] = None, w: Optional[DisturbanceData] = None) -> np.ndarray` function that plans a new trajectory/generates new references for the ship, either using the guidance system or COLAV system. A list of dynamic obstacle data, possibly Electronic Navigational Chart (ENC) object and disturbance information can be used by the planner.
+- `track_obstacles(self, t: float, dt: float, true_do_states: list) -> Tuple[list, list]` function that tracks nearby dynamic obstacles.
+
+Standardized input/output formats are used for the interfaces to make the code for each subsystem easy to switch in/out.
+
+It can be configured to use different combinations of collision avoidance algorithms, guidance systems, controllers, estimators, sensors, and models. The key element here is that each subsystem provides a standard inferface, which any external module using the subsystem must adhere to.  See the source code and test files for more in depth info on the functionality. Check out the `ship_list` entry under the `schemas/scenario.yaml` to get a clue on what you can configure for the ship. NOTE: The own-ship must always have `ID=0` and is the first ship to configure under `ship_list`.
+
+If you want to expand the `Ship` object by adding support for a new model, controller, guidance law etc., a rough recipe is the following (in this example for a new model, but the procedure will be the same for any subsystem or module in the framework):
+
+- 1: Implement the model under `core/models.py`, inherit from the `IModel` interface and implement the required interface functions.
+- 2: Add a parameter class for the model, and add this parameter class entry to the `models.Config` class to add support for parsing the model from configuration files. This also entails that you implement the `from_dict(config_dict: dict) -> ModelParams` and `to_dict() -> dict:` functions, to allow for easy parsing of dictionaries into dataclasses. However, note that some of the implemented ship models existing in the framework have fixed and non-configurable parameters. In this case, the configuration entry scheme for the model is an empty string (see e.g. for `Telemetron` under `models` in the scenario schema).
+- 3: Use the new model parameter class as input to the new model object constructor.
+- 4: Add support for the new model by adding its parameter object class to the `models` part of the `schemas/scenario.yaml` files under `ship_list`.
+- 5: Test the new model in a scenario where you specify the model parameters in a scenario configuration file, or directly during run-time (as in `test_ship.py`).
+
+In all these steps, adhere to the used code style and docstring format.
+
+Some common configurations of the ship subsystems are detailed below.
+
+#### External Control
+In case you are employing an RL-agent through the `COLAVEnvironment`, the `remote_actor` parameter inside the simulator `step(..)`-function is set to true. In this case, the RL-agent sets the ship references (pose, velocity and acceleration / inputs) externally.
+
+#### Guidance, Navigation and Control With a Kinetic Model
+The `scenarios/head_on.yaml` scenario contains a typical GNC/autopilot-configuration of the own-ship, where LOS-guidance (given waypoints and a speed plan) provides course and speed references to a low-level controller (in this case a feedback-linearizing surge-heading controller).
+
+The ship `plan` step will then only entail that the configured `guidance` object LOS algorithm computes course+speed references, which are provided to the onboard controller during the `forward` call. The onboard controller then computes the required force vector to track the reference setpoints.
+
+#### Guidance, Navigation and Control With a Kinematic Model
+The `scenarios/ais_scenario1.yaml` scenario contains a typical GNC/autopilot-configuration of the own-ship, where LOS-guidance (given waypoints and a speed plan) provides course and speed references that are directly passed through to a simple kinematic ship model. Here, a `PassThroughCS` "controller" is used to allow for passing the guidance system course and speed references straight through the controller step and directly to the ship model.
+
+The ship `plan` step will then only entail that the configured `guidance` object LOS algorithm computes course+speed references, which are provided to the onboard controller and directly forwarded during the `forward` call. The ship model will then directly use the guidance system references as inputs.
+
+
+#### Planner Providing Inputs and Not (Pose, Velocity, Acceleration) References
+In case you want to develop a motion planning algorithm that provides low-level inputs (e.g. generalized force inputs) to the ship instead of the standard 9-entry pose, velocity, acceleration reference format, you can specify a `PassThroughInputs` type of controller. This "controller" essentially lets the input references (which are now low-level inputs from your algorithm) go straight through, such that the controller is in practice disabled. An example of this is found in the `scenarios/simple_planning_example.yaml`, where a rudder-propeller mapping with a specificed lever arm is used to map forces in x and y to include the yaw moment as well.
+
+The ship `plan` step will then entail that you use your wrapped `colav` system, that provide `references` that are low-level inputs. When these are passed to the `controller` object during the `forward` call, they will pass straight through and go into the ship model object.
+
+#### Godlike Target Tracking (Ground Truth Tracking)
+If you want to test your planning algorithm with perfect knowlegde on nearby vessels, you can specify the `GodTracker` to be used under `tracker` in the scenario configuration file. As this object has no parameters, the configuration entry is an empty string `god_tracker: ''` (see `schemas/scenario.yaml` for clues).
+
+#### Simple Kalman-filter based Target Tracking
+The standard support for target tracking in the simulator is to use a Kalman Filter for estimating the states of nearby vessels. Most of the scenario files have examples on how to configure this tracker. Tune the measurement covariance (R) through the sensor configuration, and adjust the scenario configuration based on whether or not you want to consider AIS-measurements, Radar-measurements or both.
+
+#### COLAV
+The `colav_interface.py` provides an interface for arbitrary `COLAV` planning algorithms and hierarchys within. See the file for examples/inspiration on how to wrap your own COLAV-planner to make it adhere to the interface. Alternatively, you can provide your own COLAV system through the `ownship_colav_system` input to the simulator `run(.)` function. In any case, the COLAV algorithm should adhere to the `ICOLAV` interface (see `colav_interface.py`). This enables the usage of both internally developed COLAV planners in addition to third-party ones.
+
+
+## Future Enhancements (Roadmap)
+- Improve random generation of vessel COLREGS scenarios. E.g. use AIS data to sample "realistic" vessel trajectories based on a fitted distribution for historical vessel positions and velocities.
+- Improve live-visualization in the simulator w.r.t. code readability and run-time.
+- Add functionality for saving simulation results to file.
+- Streamline installation of `seacharts`, `colav_evaluation_tool` and the `colav_simulator` through a script.
+- Separate the large `schemas/scenario.yaml` validation schema into multiple sub-schemas for easier readability.
+- Create IsaacGym-wrapper for GPU-enabled parallelized RL.
+

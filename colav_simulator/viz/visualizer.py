@@ -7,7 +7,6 @@
     Author: Trym Tengesdal, Magne Aune, Melih Akdag, Joachim Miller
 """
 
-import warnings
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Tuple
@@ -15,13 +14,13 @@ from typing import Any, Optional, Tuple
 import colav_simulator.common.map_functions as mapf
 import colav_simulator.common.miscellaneous_helper_methods as mhm
 import colav_simulator.common.paths as dp
+import colav_simulator.common.plotters as plotters
 import colav_simulator.core.ship as ship
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
 from matplotlib import animation
-from matplotlib.transforms import Affine2D
 from matplotlib_scalebar.scalebar import ScaleBar
 from pandas import DataFrame
 from scipy.stats import chi2, norm
@@ -49,6 +48,7 @@ class Config:
         False  # If true, the ground truth target pose is shown in the live plot, otherwise the estimated pose is shown
     )
     show_liveplot_measurements: bool = False
+    show_liveplot_target_ships: bool = True  # If true, the target ships are shown in the live plot
     show_liveplot_target_tracks: bool = True  # If true, the target tracks are shown in the live plot
     show_liveplot_target_trajectories: bool = (
         True  # If true, the target (ground truth) trajectories are shown in the live plot
@@ -67,7 +67,13 @@ class Config:
     figsize: list = field(default_factory=lambda: [12, 10])
     margins: list = field(default_factory=lambda: [0.0, 0.0])
     uniform_seabed_color: bool = True
+    black_land: bool = True
+    black_shore: bool = True
     disable_ship_labels: bool = True
+    ownship_trajectory_color: str = "xkcd:pink"
+    ownship_waypoint_color: str = "xkcd:yellow"
+    target_trajectory_color: str = "xkcd:peach"
+    target_waypoint_color: str = "xkcd:orange"
     ship_linewidth: float = 0.9
     ship_scaling: list = field(default_factory=lambda: [5.0, 2.0])
     ship_info_fontsize: int = 13
@@ -188,7 +194,7 @@ class Visualizer:
         assert self._config.show_liveplot, "Live plot must be enabled to set this parameter"
         self._config.update_rate_liveplot = update_rate
 
-    def init_figure(self, enc: ENC, extent: list) -> None:
+    def init_figure(self, enc: ENC, extent: list, fignum: Optional[int] = None) -> None:
         """Initialize the figure for live plotting.
 
         Args:
@@ -197,14 +203,16 @@ class Visualizer:
         """
         plt.close()
         self.frames = []
-        self.fig = plt.figure("Simulation Live Plot", figsize=self._config.figsize)
+        self.fig = plt.figure(num=fignum, figsize=self._config.figsize)
 
         ax_map = self.fig.add_subplot(1, 1, 1)
-        mapf.plot_background(
+        plotters.plot_background(
             ax_map,
             enc,
             dark_mode=self._config.dark_mode_liveplot,
             uniform_seabed_color=self._config.uniform_seabed_color,
+            land_color="black" if self._config.black_land else None,
+            shore_color="black" if self._config.black_shore else None,
         )
         ax_map.margins(x=self._config.margins[0], y=self._config.margins[0])
         plt.ion()
@@ -274,13 +282,14 @@ class Visualizer:
         data = data.reshape(self.fig.canvas.get_width_height()[::-1] + (3,))
         return data
 
-    def init_live_plot(self, enc: ENC, ship_list: list) -> None:
+    def init_live_plot(self, enc: ENC, ship_list: list, fignum: Optional[int] = None) -> None:
         """Initializes the plot handles of the live plot for a simulation
         given by the ship list.
 
         Args:
             - enc (ENC): ENC object containing the map data.
             - ship_list (list): List of configured ships in the simulation.
+            - fignum (int, optional): Figure number for the live plot.
         """
         if not self._config.show_liveplot:
             return
@@ -291,7 +300,7 @@ class Visualizer:
         matplotlib.rcParams["ps.fonttype"] = 42
 
         self.xlimits, self.ylimits = self.find_plot_limits(enc, ship_list[0])
-        self.init_figure(enc, [self.ylimits[0], self.ylimits[1], self.xlimits[0], self.xlimits[1]])
+        self.init_figure(enc, [self.ylimits[0], self.ylimits[1], self.xlimits[0], self.xlimits[1]], fignum=fignum)
         if self._config.zoom_in_liveplot_on_ownship:
             self.zoom_in_live_plot_on_ownship(enc, ship_list[0].csog_state)
 
@@ -302,10 +311,7 @@ class Visualizer:
         for i, ship_obj in enumerate(ship_list):
             lw = self._config.ship_linewidth
             # If number of ships is greater than 16, use the same color for all target ships
-            if i > 0 and n_ships > len(self._config.ship_colors):
-                c = self._config.ship_colors[1]
-            else:
-                c = self._config.ship_colors[i]
+            ship_color = self._config.ship_colors[0] if i == 0 else self._config.do_colors[0]
 
             # Plot the own-ship (i = 0) above the target ships
             if i == 0:
@@ -392,7 +398,7 @@ class Visualizer:
                     0.0,
                     0.0,
                     ship_name,  # + " | mmsi:" + str(ship.mmsi),
-                    color=c,
+                    color=ship_color,
                     fontsize=self._config.ship_info_fontsize,
                     verticalalignment="center",
                     horizontalalignment="center",
@@ -403,7 +409,7 @@ class Visualizer:
             ship_i_handles["ground_truth_patch"] = None
             if ship_obj.id == 0 or (ship_obj.id > 0 and self._config.show_liveplot_ground_truth_target_pose):
                 ship_i_handles["ground_truth_patch"] = ax_map.fill(
-                    [], [], edgecolor="k", facecolor=c, linewidth=lw, label="", zorder=zorder_patch
+                    [], [], edgecolor="k", facecolor=ship_color, linewidth=lw, label="", zorder=zorder_patch
                 )[0]
 
             # Add 0.0 to data to avoid matplotlib error when plotting empty trajectory
@@ -411,10 +417,13 @@ class Visualizer:
             if (ship_obj.id == 0 and self._config.show_liveplot_ownship_trajectory) or (
                 ship_obj.id > 0 and self._config.show_liveplot_target_trajectories
             ):
+                traj_color = (
+                    self._config.ownship_trajectory_color if ship_obj.id == 0 else self._config.target_trajectory_color
+                )
                 ship_i_handles["trajectory"] = ax_map.plot(
                     [0.0],
                     [0.0],
-                    color=c,
+                    color=traj_color,
                     linewidth=lw,
                     label=ship_name + " true traj.",
                     zorder=zorder_patch - 2,
@@ -424,7 +433,7 @@ class Visualizer:
                 ship_i_handles["colav_nominal_trajectory"] = ax_map.plot(
                     [0.0],
                     [0.0],
-                    color=c,
+                    color=ship_color,
                     linewidth=lw,
                     marker="8",
                     markersize=4,
@@ -436,7 +445,7 @@ class Visualizer:
                 ship_i_handles["colav_predicted_trajectory"] = ax_map.plot(
                     [0.0],
                     [0.0],
-                    color=c,
+                    color=ship_color,
                     linewidth=lw,
                     marker="",
                     markersize=4,
@@ -447,12 +456,12 @@ class Visualizer:
 
                 # ship_i_handles["colav_relevant_static_obstacles"] = ax_map.add_feature(
                 #     ShapelyFeature(
-                #         [], edgecolor="k", facecolor="r", linewidth=lw, label="", crs=enc.crs, zorder=zorder_patch - 1
+                #         [], edgecolor="k", facecolor="r", linewidth=lw, label="", zorder=zorder_patch - 1
                 #     )
                 # )
                 # ship_i_handles["colav_relevant_dynamic_obstacles"] = ax_map.add_feature(
                 #     ShapelyFeature(
-                #         [], edgecolor="k", facecolor="r", linewidth=lw, label="", crs=enc.crs, zorder=zorder_patch - 1
+                #         [], edgecolor="k", facecolor="r", linewidth=lw, label="", zorder=zorder_patch - 1
                 #     )
                 # )
 
@@ -460,15 +469,18 @@ class Visualizer:
                 (ship_obj.id == 0 and self._config.show_liveplot_ownship_waypoints)
                 or (ship_obj.id > 0 and self._config.show_liveplot_target_waypoints)
             ) and ship_obj.waypoints.size > 0:
-                waypoint_color = "yellow" if ship_obj.id == 0 else "orange"
+                waypoint_color = (
+                    self._config.ownship_waypoint_color if ship_obj.id == 0 else self._config.target_waypoint_color
+                )
+                path_poly = mapf.create_path_polygon(
+                    ship_obj.waypoints, point_buffer=2, disk_buffer=4, hole_buffer=2, show_annuluses=True
+                )
                 ship_i_handles["waypoints"] = ax_map.plot(
-                    ship_obj.waypoints[1, :],
-                    ship_obj.waypoints[0, :],
+                    *path_poly.exterior.xy,
+                    # ship_obj.waypoints[1, :],
+                    # ship_obj.waypoints[0, :],
                     color=waypoint_color,
-                    marker="o",
-                    markersize=8,
-                    linestyle="dashed",
-                    linewidth=lw,
+                    linewidth=1,
                     alpha=0.6,
                     label=ship_name + " waypoints",
                     zorder=-6,
@@ -507,6 +519,9 @@ class Visualizer:
             - n_ships (int): Number of ships in the simulation
             - enc (ENC): The ENC object
         """
+        if not self._config.show_liveplot_target_ships:
+            return
+
         tracks: list = []
         tracks, _ = ownship.get_do_track_information()
         do_labels = [track[0] for track in tracks]
@@ -518,12 +533,9 @@ class Visualizer:
         zorder_patch = 4
         if len(do_estimates) > 0:
             lw = self._config.do_linewidth
+            do_c = self._config.do_colors[0]
             for j, do_estimate in enumerate(do_estimates):  # pylint: disable=consider-using-enumerate
                 plt_idx = do_labels[j] - 1  # -1 to account for own-ship being idx 0
-                if n_ships > len(self._config.ship_colors):
-                    do_c = self._config.do_colors[1]
-                else:
-                    do_c = self._config.do_colors[plt_idx]
 
                 if self.ship_plt_handles[0]["track_started"][plt_idx]:
                     start_idx_track_line_data = 0
@@ -613,6 +625,9 @@ class Visualizer:
             - idx (int): The index of the ship object in the simulation.
             - enc (ENC): The ENC object.
         """
+        if idx > 0 and not self._config.show_liveplot_target_ships:
+            return
+
         lw = kwargs["lw"] if "lw" in kwargs else self._config.ship_linewidth
         c = kwargs["c"] if "c" in kwargs else self._config.ship_colors[idx]
         start_idx_ship_line_data = kwargs["start_idx_ship_line_data"] if "start_idx_ship_line_data" in kwargs else 0
@@ -649,13 +664,6 @@ class Visualizer:
             self.ship_plt_handles[idx]["trajectory"].set_ydata(
                 [*self.ship_plt_handles[idx]["trajectory"].get_ydata()[start_idx_ship_line_data:], csog_state[0]]
             )
-
-        if (
-            (ship_obj.id == 0 and self._config.show_liveplot_ownship_waypoints)
-            or (ship_obj.id > 0 and self._config.show_liveplot_target_waypoints)
-        ) and ship_obj.waypoints.size > 0:
-            self.ship_plt_handles[idx]["waypoints"].set_xdata(ship_obj.waypoints[1, :])
-            self.ship_plt_handles[idx]["waypoints"].set_ydata(ship_obj.waypoints[0, :])
 
         if self._config.show_liveplot_colav_results:
             self.ship_plt_handles[idx] = ship_obj.plot_colav_results(ax_map, enc, self.ship_plt_handles[idx], **kwargs)
@@ -735,7 +743,6 @@ class Visualizer:
 
             self.update_ship_live_data(ship_obj, i, enc, lw=lw, c=c, start_idx_ship_line_data=start_idx_ship_line_data)
 
-        plt.tight_layout()
         self.fig.canvas.blit(ax_map.bbox)
         self.fig.canvas.flush_events()
         self.frames.append(self.get_live_plot_image())
@@ -755,7 +762,6 @@ class Visualizer:
         self.axes[0].set_xlim(upd_ylimits[0], upd_ylimits[1])
         self.axes[0].set_ylim(upd_xlimits[0], upd_xlimits[1])
         # plt.axis("equal")
-        plt.tight_layout()
 
     def save_live_plot_animation(self, filename: Path = dp.animation_output / "liveplot.gif") -> None:
         """Saves the live plot animation to a file if enabled.
@@ -861,7 +867,7 @@ class Visualizer:
         axes = []
         fig_map = plt.figure("Scenario: " + str(save_file_path.stem), figsize=self._config.figsize)
         ax_map = fig_map.add_subplot(1, 1, 1)
-        mapf.plot_background(ax_map, enc)
+        plotters.plot_background(ax_map, enc)
         ax_map.margins(x=self._config.margins[0], y=self._config.margins[0])
         xlimits, ylimits = self.find_plot_limits(enc, ship_list[0], buffer=0.0)
         plt.show(block=False)

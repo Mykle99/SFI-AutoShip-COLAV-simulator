@@ -18,6 +18,7 @@ import colav_simulator.common.config_parsing as cp
 import colav_simulator.common.map_functions as mapf
 import colav_simulator.common.math_functions as mf
 import colav_simulator.common.miscellaneous_helper_methods as mhm
+import colav_simulator.common.plotters as plotters
 import colav_simulator.core.guidances as guidances
 import colav_simulator.core.models as models
 import colav_simulator.core.ship as ship
@@ -40,15 +41,15 @@ np.set_printoptions(suppress=True, formatter={"float_kind": "{:.2f}".format})
 
 @dataclass
 class PQRRTStarParams:
-    max_nodes: int = 10000  # Maximum allowable number of nodes in the tree
-    max_iter: int = 25000  # Maximum allowable number of iterations
-    max_time: float = 5000.0  # Maximum allowable runtime in seconds
-    iter_between_direct_goal_growth: int = 100000  # Number of iterations between direct growth towards the goal
+    max_nodes: int = 3000  # Maximum allowable number of nodes in the tree
+    max_iter: int = 12000  # Maximum allowable number of iterations
+    max_time: float = 5.0  # Maximum allowable runtime in seconds
+    iter_between_direct_goal_growth: int = 100  # Number of iterations between direct growth towards the goal
     min_node_dist: float = 10.0  # Minimum distance between nodes in nearest neighbor search
-    goal_radius: float = 50.0  # Radius of goal region
+    goal_radius: float = 500.0  # Radius of goal region
     step_size: float = 1.0  # Step size for steering/dynamics
-    min_steering_time: float = 2.0  # Minimum steering time allowed
-    max_steering_time: float = 20.0  # Maximum steering time allowed
+    min_steering_time: float = 1.0  # Minimum steering time allowed
+    max_steering_time: float = 30.0  # Maximum steering time allowed
     steering_acceptance_radius: float = 10.0  # Radius of acceptance for steering (using LOS)
     gamma: float = 1500.0  # Nearest neighbor search radius parameter
     max_sample_adjustments: int = 100  # Maximum number of sample adjustments allowed in Potential field sampling
@@ -69,15 +70,15 @@ class PQRRTStarParams:
 
 @dataclass
 class RRTStarParams:
-    max_nodes: int = 10000  # Maximum allowable number of nodes in the tree
-    max_iter: int = 25000  # Maximum allowable number of iterations
-    max_time: float = 5000.0  # Maximum allowable runtime in seconds
-    iter_between_direct_goal_growth: int = 100000  # Number of iterations between direct growth towards the goal
+    max_nodes: int = 3000  # Maximum allowable number of nodes in the tree
+    max_iter: int = 12000  # Maximum allowable number of iterations
+    max_time: float = 5.0  # Maximum allowable runtime in seconds
+    iter_between_direct_goal_growth: int = 100  # Number of iterations between direct growth towards the goal
     min_node_dist: float = 10.0  # Minimum distance between nodes in nearest neighbor search
-    goal_radius: float = 50.0  # Radius of goal region
+    goal_radius: float = 500.0  # Radius of goal region
     step_size: float = 1.0  # Step size for steering/dynamics
-    min_steering_time: float = 2.0  # Minimum steering time allowed
-    max_steering_time: float = 20.0  # Maximum steering time allowed
+    min_steering_time: float = 1.0  # Minimum steering time allowed
+    max_steering_time: float = 30.0  # Maximum steering time allowed
     steering_acceptance_radius: float = 10.0  # Radius of acceptance for steering (using LOS)
     gamma: float = 1500.0  # Nearest neighbor search radius parameter
 
@@ -92,14 +93,14 @@ class RRTStarParams:
 
 @dataclass
 class RRTParams:
-    max_nodes: int = 10000  # Maximum allowable number of nodes in the tree
-    max_iter: int = 25000  # Maximum allowable number of iterations
-    max_time: float = 5000.0  # Maximum allowable runtime in seconds
-    iter_between_direct_goal_growth: int = 100000  # Number of iterations between direct growth towards the goal
-    goal_radius: float = 50.0  # Radius of goal region
+    max_nodes: int = 3000  # Maximum allowable number of nodes in the tree
+    max_iter: int = 12000  # Maximum allowable number of iterations
+    max_time: float = 5.0  # Maximum allowable runtime in seconds
+    iter_between_direct_goal_growth: int = 100  # Number of iterations between direct growth towards the goal
+    goal_radius: float = 500.0  # Radius of goal region
     step_size: float = 1.0  # Step size for steering/dynamics
-    min_steering_time: float = 2.0  # Minimum steering time allowed
-    max_steering_time: float = 20.0  # Maximum steering time allowed
+    min_steering_time: float = 1.0  # Minimum steering time allowed
+    max_steering_time: float = 30.0  # Maximum steering time allowed
     steering_acceptance_radius: float = 10.0  # Radius of acceptance for steering (using LOS)
 
     @classmethod
@@ -114,20 +115,29 @@ class RRTParams:
 @dataclass
 class RRTConfig:
     params: RRTParams | RRTStarParams | PQRRTStarParams = field(default_factory=lambda: RRTParams())
-    model: models.KinematicCSOGParams = field(default_factory=lambda: models.KinematicCSOGParams(
-        name="KinematicCSOG",
-        draft=0.5,
-        length=15.0,
-        width=4.0,
-        T_chi=6.0,
-        T_U=6.0,
-        r_max=np.deg2rad(10),
-        U_min=0.0,
-        U_max=10.0,
-    ))
-    los: guidances.LOSGuidanceParams = field(default_factory=lambda: guidances.LOSGuidanceParams(
-        K_p=0.035, K_i=0.0, pass_angle_threshold=90.0, R_a=25.0, max_cross_track_error_int=30.0
-    ))
+    model: models.KinematicCSOGParams = field(
+        default_factory=lambda: models.KinematicCSOGParams(
+            name="KinematicCSOG",
+            draft=0.5,
+            length=15.0,
+            width=4.0,
+            T_chi=6.0,
+            T_U=6.0,
+            r_max=np.deg2rad(10),
+            U_min=0.0,
+            U_max=10.0,
+        )
+    )
+    los: guidances.LOSGuidanceParams = field(
+        default_factory=lambda: guidances.LOSGuidanceParams(
+            K_p=0.035,
+            K_i=0.0,
+            pass_angle_threshold=90.0,
+            R_a=25.0,
+            max_cross_track_error_int=200.0,
+            cross_track_error_int_threshold=30.0,
+        )
+    )
 
     @classmethod
     def from_dict(cls, config_dict: dict):
@@ -141,6 +151,13 @@ class RRTConfig:
         config.model = models.KinematicCSOGParams.from_dict(config_dict["model"]["csog"])
         config.los = guidances.LOSGuidanceParams.from_dict(config_dict["los"])
         return config
+
+    def to_dict(self):
+        output = asdict(self)
+        output["params"] = self.params.to_dict()
+        output["model"] = self.model.to_dict()
+        output["los"] = self.los.to_dict()
+        return output
 
 
 class BehaviorGenerationMethod(Enum):
@@ -192,15 +209,21 @@ class Config:
         default_factory=lambda: [-45.0, 45.0]
     )  # Range of [min, max] change in angle between randomly created waypoints
     hazard_buffer: float = 0.0  # Buffer to add to hazards when creating safe sea triangulation
-    rrt: Optional[RRTConfig] = field(default_factory=lambda: RRTConfig(
-        params=RRTParams(), model=models.KinematicCSOGParams(), los=guidances.LOSGuidanceParams()
-    ))
-    rrtstar: Optional[RRTConfig] = field(default_factory=lambda: RRTConfig(
-        params=RRTStarParams(), model=models.KinematicCSOGParams(), los=guidances.LOSGuidanceParams()
-    ))
-    pqrrtstar: Optional[RRTConfig] = field(default_factory=lambda: RRTConfig(
-        params=PQRRTStarParams(), model=models.KinematicCSOGParams(), los=guidances.LOSGuidanceParams()
-    ))
+    rrt: Optional[RRTConfig] = field(
+        default_factory=lambda: RRTConfig(
+            params=RRTParams(), model=models.KinematicCSOGParams(), los=guidances.LOSGuidanceParams()
+        )
+    )
+    rrtstar: Optional[RRTConfig] = field(
+        default_factory=lambda: RRTConfig(
+            params=RRTStarParams(), model=models.KinematicCSOGParams(), los=guidances.LOSGuidanceParams()
+        )
+    )
+    pqrrtstar: Optional[RRTConfig] = field(
+        default_factory=lambda: RRTConfig(
+            params=PQRRTStarParams(), model=models.KinematicCSOGParams(), los=guidances.LOSGuidanceParams()
+        )
+    )
 
     @classmethod
     def from_dict(cls, config_dict: dict):
@@ -259,6 +282,7 @@ class BehaviorGenerator:
         self._grounding_hazards: list = []
         self._seed: Optional[int] = None
         self._bg_method_list: list = []
+        self._initialized: bool = False
 
     def seed(self, seed: Optional[int] = None) -> None:
         """Seeds the behavior generator, i.e. all RRTs/pqrrtstars.
@@ -293,6 +317,7 @@ class BehaviorGenerator:
 
     def reset(self) -> None:
         """Resets the behavior generator, i.e. all RRTs and data structures for the environment."""
+        self._initialized = False
         self._prev_ship_plans = []
         self._prev_ship_states = []
         self._ship_replan_flags = []
@@ -329,7 +354,7 @@ class BehaviorGenerator:
         ]
         return self._rrt_list, self._rrtstar_list, self._pqrrtstar_list
 
-    def initialize(self, n_ships: int) -> None:
+    def initialize_data_structures(self, n_ships: int) -> None:
         """Initializes data structures and RRTs (if enabled). The number of RRTs is determined by the number of ships.
 
         If the number of ships in the input list is different from the number of RRTs, the data structures and RRTs are either extended or truncated to match the number of ships.
@@ -438,7 +463,7 @@ class BehaviorGenerator:
                 safe_sea_cdt_weights=self._safe_sea_cdt_weights,
                 bbox=ownship_bbox,
                 min_distance_from_start=500.0,
-                max_distance_from_start=5.0 * ship_obj.speed * simulation_timespan,
+                max_distance_from_start=min(1200.0, 5.0 * ship_obj.speed * simulation_timespan),
                 show_plots=False,
             )
             goal_state = np.array([goal_position[0], goal_position[1], 0.0, 0.0, 0.0, 0.0])
@@ -448,7 +473,7 @@ class BehaviorGenerator:
 
             bbox = mapf.create_bbox_from_points(self._enc, ship_obj.csog_state[:2], goal_state[:2], buffer=800.0)
             relevant_hazards = mapf.extract_hazards_within_bounding_box(
-                self._grounding_hazards, bbox, self._enc, show_plots=False
+                self._grounding_hazards, bbox, self._enc, show_plots=show_plots
             )
             planning_cdt = mapf.create_safe_sea_triangulation(
                 self._enc,
@@ -488,7 +513,7 @@ class BehaviorGenerator:
                 waypoints, speed_plan = self.generate_constant_speed_and_course_waypoints(
                     ship_obj.csog_state, ship_obj.draft, ship_obj.length, simulation_timespan
                 )
-                # mapf.plot_rrt_tree(planner.get_tree_as_list_of_dicts(), self._enc)
+                # plotters.plot_rrt_tree(planner.get_tree_as_list_of_dicts(), self._enc)
             if ship_obj.id == 0:
                 if show_plots:
                     self._enc.draw_circle((goal_state[1], goal_state[0]), 10, color="gold", alpha=0.4)
@@ -519,8 +544,6 @@ class BehaviorGenerator:
         """
         waypoints = np.zeros((0, 2))
         speed_plan = np.zeros((0, 1))
-        ownship_method = self._config.ownship_method
-        target_ship_method = self._config.target_ship_method
         ownship = ship_list[0]
 
         for ship_cfg_idx, ship_config in enumerate(ship_config_list):
@@ -544,8 +567,9 @@ class BehaviorGenerator:
 
             method = self._bg_method_list[ship_obj.id]
             if method == BehaviorGenerationMethod.ConstantSpeedAndCourse:
+                min_dist_to_hazards = ship_obj.length * 4.0 if ship_obj.id == 0 else ship_obj.length * 3.0
                 waypoints, speed_plan = self.generate_constant_speed_and_course_waypoints(
-                    ship_obj.csog_state, ship_obj.draft, ship_obj.length, simulation_timespan
+                    ship_obj.csog_state, ship_obj.draft, simulation_timespan, min_dist_to_hazards=min_dist_to_hazards
                 )
             elif method == BehaviorGenerationMethod.ConstantSpeedRandomWaypoints:
                 waypoints, _ = self.generate_random_waypoints(
@@ -554,7 +578,7 @@ class BehaviorGenerator:
                     ship_obj.csog_state[1],
                     ship_obj.csog_state[3],
                     ship_obj.draft,
-                    ship_obj.length,
+                    min_dist_to_hazards=ship_obj.length * 3.0,
                 )
                 speed_plan = ship_obj.csog_state[2] * np.ones(waypoints.shape[1])
             elif method == BehaviorGenerationMethod.VaryingSpeedRandomWaypoints:
@@ -564,7 +588,7 @@ class BehaviorGenerator:
                     ship_obj.csog_state[1],
                     ship_obj.csog_state[3],
                     ship_obj.draft,
-                    ship_obj.length,
+                    min_dist_to_hazards=ship_obj.length * 3.0,
                 )
                 speed_plan = self.generate_random_speed_plan(
                     rng,
@@ -592,7 +616,7 @@ class BehaviorGenerator:
                 ship_obj = ship_list[ship_idx]
                 if self._enc is not None and ship_obj.waypoints.size > 1:
                     color = "purple" if ship_obj.id == 0 else "orangered"
-                    mapf.plot_waypoints(
+                    plotters.plot_waypoints(
                         ship_obj.waypoints,
                         self._enc,
                         color=color,
@@ -602,7 +626,7 @@ class BehaviorGenerator:
                     )
                 if ship_obj.trajectory.size > 1:
                     color = "purple" if ship_obj.id == 0 else "orangered"
-                    mapf.plot_trajectory(ship_obj.trajectory, self._enc, color=color, alpha=0.6)
+                    plotters.plot_trajectory(ship_obj.trajectory, self._enc, color=color, alpha=0.6)
                 color = "magenta" if ship_obj.id == 0 else "red"
                 ship_poly = mapf.create_ship_polygon(
                     ship_obj.csog_state[0],
@@ -668,7 +692,6 @@ class BehaviorGenerator:
         )
 
         planning_bbox = self._planning_bbox_list[ship_obj.id]
-        planning_cdt = self._planning_cdt_list[ship_obj.id]
         if rrt_method == BehaviorGenerationMethod.RRT:
             planner = self._rrt_list[ship_obj.id]
             # print("Using RRT for behavior generation...")
@@ -696,7 +719,7 @@ class BehaviorGenerator:
         corridor_diameter = 150.0
         for s in range(n_samples):
             time_now = time.time()
-            for iter in range(100):
+            for iter in range(10):
                 if sampling_method.value == RRTBehaviorSamplingMethod.UniformlyInMap.value:
                     x_rand = rng.uniform(planning_bbox[1], planning_bbox[3])
                     y_rand = rng.uniform(planning_bbox[0], planning_bbox[2])
@@ -755,9 +778,9 @@ class BehaviorGenerator:
         self,
         csog_state: np.ndarray,
         draft: float,
-        length: float,
         simulation_timespan: float,
         horizon_modifier: float = 5.0,
+        min_dist_to_hazards: float = 20.0,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Generates waypoints and speed plan for a ship with constant speed and course.
 
@@ -767,6 +790,7 @@ class BehaviorGenerator:
             length (float): Length of the ship.
             simulation_timespan (float): Simulation timespan.
             horizon_modifier (float, optional): Endpoint scaling. Defaults to 5.0.
+            min_dist_to_hazards (float, optional): Minimum distance to hazards. Defaults to 20.0.
 
         Returns:
             Tuple[np.ndarray, np.ndarray]: Tuple containing the waypoints and speed plan.
@@ -781,9 +805,12 @@ class BehaviorGenerator:
             waypoints[:, 0] + U * np.array([np.cos(chi), np.sin(chi)]) * simulation_timespan * horizon_modifier,
             draft,
             self._grounding_hazards,
-            min_dist=np.min([10.0, 3.0 * length]),
+            min_dist=min_dist_to_hazards,
         )
         waypoints[:, 1] = end_position
+        waypoints, _ = mhm.clip_waypoint_segment_to_bbox(
+            waypoints, (self._enc.bbox[1], self._enc.bbox[0], self._enc.bbox[3], self._enc.bbox[2])
+        )
         speed_plan = U * np.ones(2)
         return waypoints, speed_plan
 
@@ -794,7 +821,7 @@ class BehaviorGenerator:
         y: float,
         psi: float,
         draft: float = 2.0,
-        length: float = 5.0,
+        min_dist_to_hazards: float = 20.0,
         n_wps: Optional[int] = None,
     ) -> Tuple[np.ndarray, bool]:
         """Creates random waypoints starting from a ship position and heading.
@@ -805,7 +832,7 @@ class BehaviorGenerator:
             - y (float): y position (east) of the ship.
             - psi (float): heading of the ship in radians.
             - draft (float, optional): How deep the ship keel is into the water. Defaults to 5.
-            - length (float, optional): Length of the ship. Defaults to 5.0.
+            - min_dist_to_hazards (float, optional): Minimum distance to hazards. Defaults to 20.0.
             - n_wps (Optional[int]): Number of waypoints to create.
 
         Returns:
@@ -818,9 +845,10 @@ class BehaviorGenerator:
         waypoints = np.zeros((2, n_wps))
         waypoints[:, 0] = np.array([x, y])
         clipped = False
-        max_iter = 100
+        max_iter = 150
         for i in range(1, n_wps):
             iter_count = -1
+            crosses_grounding_hazards = False
             for _ in range(max_iter):
                 iter_count += 1
 
@@ -841,6 +869,10 @@ class BehaviorGenerator:
                     ],
                 )
 
+                wp_dist_to_hazards = mapf.min_distance_to_hazards(self._grounding_hazards, new_wp[1], new_wp[0])
+                if wp_dist_to_hazards < min_dist_to_hazards:
+                    continue
+
                 crosses_grounding_hazards = mapf.check_if_segment_crosses_grounding_hazards(
                     self._enc, waypoints[:, i - 1], new_wp, draft, self._grounding_hazards
                 )
@@ -855,7 +887,7 @@ class BehaviorGenerator:
                     new_wp,
                     draft,
                     self._grounding_hazards,
-                    min_dist=np.min([10.0, 3.0 * length]),
+                    min_dist=min_dist_to_hazards,
                 )
                 clipped = True
 
@@ -879,15 +911,15 @@ class BehaviorGenerator:
         return waypoints, clipped
 
     def generate_random_speed_plan(
-        self, rng: np.random.Generator, U: float, U_min: float = 1.0, U_max: float = 15.0, n_wps: Optional[int] = None
+        self, rng: np.random.Generator, U: float, U_min: float = 2.0, U_max: float = 8.0, n_wps: Optional[int] = None
     ) -> np.ndarray:
         """Creates a random speed plan using the input speed and min/max speed of the ship.
 
         Args:
             - rng (np.random.Generator): Random number generator.
             - U (float): The ship's speed.
-            - U_min (float, optional): The ship's minimum speed. Defaults to 1.0.
-            - U_max (float, optional): The ship's maximum speed. Defaults to 15.0.
+            - U_min (float, optional): The ship's minimum speed. Defaults to 2.0.
+            - U_max (float, optional): The ship's maximum speed. Defaults to 8.0.
             - n_wps (Optional[int]): Number of waypoints to create.
 
         Returns:

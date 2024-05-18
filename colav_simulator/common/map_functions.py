@@ -1728,14 +1728,14 @@ def compute_distance_vectors_to_grounding(
     return distance_vectors
 
 
-def calc_nominal_and_actual_OS_traj_dist(
+def calc_nominal_and_actual_traj_dist(
         os_trajectory: np.ndarray,
         os_initial_pos: np.ndarray,
         os_waypoints: np.ndarray    
     ) -> Tuple[float, float]:
-    """Calculates the nominal and actual OS trajectory distances (euclidean).
-    Note that the actual_traj_dist can be less than nominal_traj_dist if the OS trajectory
-    does not complete the nominal trajectory for instance.
+    """Calculates the nominal and actual trajectory distances (euclidean).
+    Note that the actual_traj_dist can be less than nominal_traj_dist if the ship trajectory
+    does not complete the nominal trajectory.
     
     Args:
         os_trajectory (np.ndarray): Ownship trajectory in NE.
@@ -1753,6 +1753,40 @@ def calc_nominal_and_actual_OS_traj_dist(
     # The distances between consecutive waypoints
     nominal_traj_dist += np.sum(np.linalg.norm(np.diff(os_waypoints, axis = 1), axis = 0))
     return nominal_traj_dist, actual_traj_dist
+
+
+def calc_nominal_and_actual_traj_time(
+        os_initial_pos: np.ndarray,
+        os_waypoints: np.ndarray,
+        os_speed_plan: np.ndarray,
+        os_timestamps: np.ndarray    
+    ) -> Tuple[float, float]:
+    """Calculates the nominal and actual trajectory times.
+    Note that the actual_traj_time can be less than nominal_traj_time if the ship trajectory
+    does not complete the nominal trajectory.
+    
+    Args:
+        os_initial_pos (np.ndarray): Initial position of the OS in NE.
+        os_waypoints (np.ndarray): Waypoints for the OS in NE.
+        os_speed_plan (np.ndarray): Speed plan for the OS.
+        os_timestamps (np.ndarray): Timestamps for the OS.
+
+    Returns:
+        Tuple[float, float]: Nominal and actual trajectory time for the OS.
+    """
+    # Assumes that the nominal trajectory is finished at the last timestamp of the simulation
+    actual_traj_time = os_timestamps[-1]
+
+    # The nominal time to travel between the initial state and the initial waypoint
+    nominal_dist_initial_state_first_wp = np.linalg.norm(os_initial_pos - os_waypoints[:, 0].reshape(-1, 1))
+    nominal_traj_time = nominal_dist_initial_state_first_wp/os_speed_plan[0]
+
+    # Summing the nominal times between the waypoints
+    for i in range(len(os_waypoints[0]) - 1):
+        nominal_dist_segment = np.linalg.norm(os_waypoints[:, i].reshape(-1, 1) - os_waypoints[:, i + 1].reshape(-1, 1))
+        nominal_traj_time += nominal_dist_segment/os_speed_plan[i]
+
+    return nominal_traj_time, actual_traj_time
 
 
 def calc_cross_track_error_from_nominal_traj(

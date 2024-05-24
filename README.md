@@ -1,6 +1,7 @@
 # colav-simulator: PSB-MPC Setup Guide
 This README details how the PSB-MPC can be utilized as a COLAV system within the simulator. The PSB-MPC is implemented in the [Collision Avoidance algorithm repository](https://github.com/NTNU-Autoship-Internal/thecolavrepo), and it can, from the simulator, be set to utilize the Intention Model (IM), which is implemented in the [Ship Intention Inference repository](https://github.com/NTNU-Autoship-Internal/ship_intention_inference).
 
+The main functionality is contained in the `Simulator` class of `simulator.py`, which runs through scenarios defined by the `ScenarioGenerator`. One can visualize the results underway, save the results, and use the `colav_evaluation_tool` afterwards to evaluate the performance of the own-ship (potentially) running a COLAV algorithm. The `seacharts` package is used to provide usage of Electronic Navigational Charts for visualization and anti-grounding purposes. See the examples and tests for simple tutorials on how to use the repository.
 
 [![platform](https://img.shields.io/badge/platform-linux-lightgrey)]()
 [![python version](https://img.shields.io/badge/python-3.11-blue)]()
@@ -243,7 +244,7 @@ The `colav_interface.py` provides an interface for arbitrary `COLAV` planning al
 
 ## Future Enhancements (Roadmap)
 - Improve random generation of vessel COLREGS scenarios. E.g. use AIS data to sample "realistic" vessel trajectories based on a fitted distribution for historical vessel positions and velocities.
-- Improve live-visualization in the simulator w.r.t. code readability and run-time.
+- Improve live-visualization in the simulator w.r.t. code readability and run-time. Switch out matplotlib for a faster backend.
 - Add functionality for saving simulation results to file.
 - Streamline installation of `seacharts`, `colav_evaluation_tool` and the `colav_simulator` through a script.
 - Separate the large `schemas/scenario.yaml` validation schema into multiple sub-schemas for easier readability.

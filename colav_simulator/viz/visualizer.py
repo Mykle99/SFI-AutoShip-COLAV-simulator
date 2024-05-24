@@ -16,8 +16,11 @@ import colav_simulator.common.miscellaneous_helper_methods as mhm
 import colav_simulator.common.paths as dp
 import colav_simulator.common.plotters as plotters
 import colav_simulator.core.ship as ship
+import colav_simulator.core.stochasticity as stoch
 import matplotlib
 import matplotlib.pyplot as plt
+
+matplotlib.use("Agg")
 import matplotlib.ticker as mticker
 import numpy as np
 from matplotlib import animation
@@ -46,6 +49,9 @@ class Config:
     )
     show_liveplot_ground_truth_target_pose: bool = (
         False  # If true, the ground truth target pose is shown in the live plot, otherwise the estimated pose is shown
+    )
+    show_liveplot_disturbances: bool = (
+        False  # If true, the disturbances are shown in the live plot (if any currents and/or wind)
     )
     show_liveplot_measurements: bool = False
     show_liveplot_target_ships: bool = True  # If true, the target ships are shown in the live plot
@@ -146,8 +152,6 @@ class Config:
 class Visualizer:
     """Class with functionality for visualizing/animating ship scenarios, and plotting/saving the simulation results."""
 
-    background: Any  # map background in live plotting fig
-
     def __init__(self, config: Optional[Config] = None, enc: Optional[ENC] = None) -> None:
         if config:
             self._config: Config = config
@@ -158,6 +162,7 @@ class Visualizer:
         self.axes: list = []  # handle to axes for live plotting
         self.ship_plt_handles: list = []  # handles used for live plotting
         self.misc_plt_handles: dict = {}  # Extra handles used for live plotting
+        self.background: Any = None  # background for live plotting
 
         self.xlimits = [-1e10, 1e10]
         self.ylimits = [-1e10, 1e10]
@@ -201,7 +206,6 @@ class Visualizer:
             - enc (ENC): ENC object for the map background.
             - extent (list): List specifying the extent of the map.
         """
-        plt.close()
         self.frames = []
         self.fig = plt.figure(num=fignum, figsize=self._config.figsize)
 
@@ -215,7 +219,7 @@ class Visualizer:
             shore_color="black" if self._config.black_shore else None,
         )
         ax_map.margins(x=self._config.margins[0], y=self._config.margins[0])
-        plt.ion()
+        # plt.ion()
 
         ax_map.set_xlim(extent[0], extent[1])
         ax_map.set_ylim(extent[2], extent[3])
@@ -294,6 +298,10 @@ class Visualizer:
         if not self._config.show_liveplot:
             return
 
+        # if self.fig is not None:
+        #     self.fig.clf(fignum)
+        #     self.background = None
+
         self._t_prev_update = 0.0
         plt.rcParams.update(matplotlib.rcParamsDefault)
         matplotlib.rcParams["pdf.fonttype"] = 42
@@ -357,7 +365,7 @@ class Visualizer:
                                 linewidth=lw,
                                 color=do_c,
                                 alpha=0.5,
-                                label=f"DO {j - 1} est. 3sigma cov.",
+                                label=f"DO {j - 1} est. 1sigma cov.",
                                 zorder=zorder_patch - 2,
                             )[0]
                         )
@@ -503,10 +511,129 @@ class Visualizer:
                 zorder=10,
                 label="",
             )
+
+        if self._config.show_liveplot_disturbances:
+            corner_offset = (-70, -70)
+            self.misc_plt_handles["disturbance"] = {}
+            dhandles = {
+                "currents": {
+                    "arrow": ax_map.quiver([], [], [], [], color="blue", scale=1000, zorder=10),
+                    "text": ax_map.text(
+                        ylim[1] + corner_offset[0],
+                        xlim[1] + corner_offset[1] - 120,
+                        "Currents: 0.0 m/s",
+                        fontsize=15,
+                        color="white",
+                        verticalalignment="top",
+                        horizontalalignment="right",
+                        zorder=10,
+                        label="",
+                    ),
+                },
+                "wind": {
+                    "arrow": ax_map.quiver([], [], [], [], color="yellow", scale=1000, zorder=10),
+                    "text": ax_map.text(
+                        ylim[1] + corner_offset[0],
+                        xlim[1] + corner_offset[1] - 140,
+                        "Wind: 0.0 m/s",
+                        fontsize=15,
+                        color="yellow",
+                        verticalalignment="top",
+                        horizontalalignment="right",
+                        zorder=10,
+                        label="",
+                    ),
+                },
+                "circle": ax_map.fill(
+                    [],
+                    [],
+                    linewidth=1.0,
+                    color="white",
+                    alpha=0.2,
+                    label="",
+                    zorder=zorder_patch - 2,
+                )[0],
+            }
+            self.misc_plt_handles["disturbance"] = dhandles
+
         plt.tight_layout()
         # self.frames.append(self.get_live_plot_image())
         # if n_ships < 3:  # to avoid cluttering the legend
         #     plt.legend(loc="upper right")
+
+    def update_disturbance_live_data(self, ax_map: plt.Axes, w: Optional[stoch.DisturbanceData]) -> None:
+        """Updates the disturbance-related plots in the live plot.
+
+        Args:
+            ax_map (plt.Axes): The axes object of the live plot.
+        """
+        if not self._config.show_liveplot_disturbances or w is None:
+            return
+
+        assert "disturbance" in self.misc_plt_handles, "Disturbance handles not initialized"
+        dhandles = self.misc_plt_handles["disturbance"]
+        ylim = ax_map.get_xlim()  # easting
+        xlim = ax_map.get_ylim()  # northing
+        arrow_scale = 60
+        circ_x, circ_y = mhm.create_circle(75, 100)
+        corner_offset = (-100, -100)
+        circ_poly = Polygon(zip(circ_y + ylim[1] + corner_offset[0], circ_x + xlim[1] + corner_offset[1]))
+        dhandles["circle"].remove()
+        dhandles["circle"] = ax_map.fill(*circ_poly.exterior.xy, color="white", alpha=0.2, zorder=10, label="")[0]
+        if w.currents is not None:
+            speed = w.currents["speed"]
+            direction = w.currents["direction"]
+            dhandles["currents"]["text"].remove()
+            dhandles["currents"]["text"] = ax_map.text(
+                ylim[1] + corner_offset[0] - 50,
+                xlim[1] + corner_offset[1] - 85,
+                f"Currents: {speed:.2f} m/s",
+                fontsize=10,
+                color="white",
+                verticalalignment="top",
+                horizontalalignment="left",
+                zorder=10,
+                label="",
+            )
+            dhandles["currents"]["arrow"].remove()
+            dhandles["currents"]["arrow"] = ax_map.arrow(
+                ylim[1] + corner_offset[0],
+                xlim[1] + corner_offset[1],
+                arrow_scale * np.sin(direction),
+                arrow_scale * np.cos(direction),
+                color="white",
+                head_width=7.0,
+                shape="full",
+                linewidth=3.0,
+                zorder=10,
+            )
+        if w.wind is not None:
+            speed = w.wind["speed"]
+            direction = w.wind["direction"]
+            dhandles["wind"]["text"].remove()
+            dhandles["wind"]["text"] = ax_map.text(
+                ylim[1] + corner_offset[0] - 50,
+                xlim[1] + corner_offset[1] - 105,
+                f"Wind: {speed:.2f} m/s",
+                fontsize=10,
+                color="yellow",
+                verticalalignment="top",
+                horizontalalignment="left",
+                zorder=10,
+                label="",
+            )
+            dhandles["wind"]["arrow"].remove()
+            dhandles["wind"]["arrow"] = ax_map.arrow(
+                ylim[1] + corner_offset[0],
+                xlim[1] + corner_offset[1],
+                arrow_scale * np.sin(direction),
+                arrow_scale * np.cos(direction),
+                head_width=7.0,
+                shape="full",
+                linewidth=3.0,
+                color="yellow",
+                zorder=10,
+            )
 
     def update_ownship_live_tracking_data(
         self, ownship: ship.Ship, sensor_measurements: list, n_ships: int, enc: ENC
@@ -578,16 +705,16 @@ class Visualizer:
                         ]
                     )
 
-                    ellipse_x, ellipse_y = mhm.create_probability_ellipse(do_covariances[j], 0.99)
+                    ellipse_x, ellipse_y = mhm.create_probability_ellipse(do_covariances[j], 0.67)
                     ell_geometry = Polygon(zip(ellipse_y + do_estimates[j][1], ellipse_x + do_estimates[j][0]))
                     if self.ship_plt_handles[0]["do_covariances"][plt_idx] is not None:
                         self.ship_plt_handles[0]["do_covariances"][plt_idx].remove()
                     self.ship_plt_handles[0]["do_covariances"][plt_idx] = ax_map.fill(
                         *ell_geometry.exterior.xy,
                         linewidth=lw,
-                        color=do_c,
-                        alpha=0.3,
-                        label=f"DO {j - 1} est. 3sigma cov.",
+                        color="orange",
+                        alpha=0.2,
+                        label=f"DO {j - 1} est. 1sigma cov.",
                         zorder=zorder_patch - 2,
                     )[0]
 
@@ -668,7 +795,15 @@ class Visualizer:
         if self._config.show_liveplot_colav_results:
             self.ship_plt_handles[idx] = ship_obj.plot_colav_results(ax_map, enc, self.ship_plt_handles[idx], **kwargs)
 
-    def update_live_plot(self, t: float, enc: ENC, ship_list: list, sensor_measurements: list) -> None:
+    def update_live_plot(
+        self,
+        t: float,
+        enc: ENC,
+        ship_list: list,
+        sensor_measurements: list,
+        w: Optional[stoch.DisturbanceData] = None,
+        **kwargs,
+    ) -> None:
         """Updates the live plot with the current data of the ships in the simulation.
 
         Args:
@@ -741,10 +876,15 @@ class Visualizer:
                 c = self._config.ship_colors[i]
             lw = self._config.ship_linewidth
 
-            self.update_ship_live_data(ship_obj, i, enc, lw=lw, c=c, start_idx_ship_line_data=start_idx_ship_line_data)
+            self.update_ship_live_data(
+                ship_obj, i, enc, lw=lw, c=c, start_idx_ship_line_data=start_idx_ship_line_data, **kwargs
+            )
+
+        self.update_disturbance_live_data(ax_map, w)
 
         self.fig.canvas.blit(ax_map.bbox)
         self.fig.canvas.flush_events()
+        plt.show(block=False)
         self.frames.append(self.get_live_plot_image())
 
     def zoom_in_live_plot_on_ownship(self, enc: ENC, os_state: np.ndarray) -> None:

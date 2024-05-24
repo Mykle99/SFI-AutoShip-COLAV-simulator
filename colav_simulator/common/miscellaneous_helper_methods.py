@@ -639,6 +639,9 @@ def clip_waypoint_segment_to_bbox(
     if intersection.geom_type == "Point":
         p_clip = np.array([intersection.x, intersection.y])
 
+    # reduce p_clip to avoid end points directly on the bounding box
+    p_clip = segment[:, 0] + 0.95 * (p_clip - segment[:, 0])
+
     return np.array([segment[:, 0], p_clip]).transpose(), True
 
 
@@ -739,6 +742,63 @@ def create_probability_ellipse(P: np.ndarray, probability: float = 0.99) -> Tupl
         ellipse_xy[:, i] = R @ ellipse_xy[:, i]
 
     return ellipse_xy[0, :].tolist(), ellipse_xy[1, :].tolist()
+
+
+def sample_state_along_waypoints(
+    rng: np.random.Generator, waypoints: np.ndarray, speed_plan: np.ndarray, timespan: float
+) -> Tuple[np.ndarray, float]:
+    """Samples a CSOG state along a set of waypoints, with course over ground aligned with the waypoint segment chosen, and corresponding speed ref.
+
+    Args:
+        rng (np.random.Generator): Numpy random generator.
+        waypoints (np.ndarray): Waypoint data.
+        speed_plan (np.ndarray): Speed plan data.
+        timespan (float): Total time span to consider.
+
+    Returns:
+        np.ndarray: Sampled state data along the waypoints, and the corresponding approximate vessel time of arrival.
+    """
+    assert (
+        waypoints.shape[0] == 2 and waypoints.shape[1] > 1
+    ), "Waypoints must be 2 x n_waypoints, with at least 2 waypoints"
+    assert speed_plan.size == waypoints.shape[1], "Speed plan must have the same number of elements as waypoints"
+    max_iter = 1000
+    wp_seg_lengths = np.linalg.norm(waypoints[:, 1:] - waypoints[:, :-1], axis=0)
+    wp_seg_times = wp_seg_lengths / speed_plan[:-1]
+    for _ in range(max_iter):
+        # choose random wp segment
+        wp_idx = rng.integers(1, waypoints.shape[1])
+        wp_seg_course = np.arctan2(
+            waypoints[1, wp_idx] - waypoints[1, wp_idx - 1], waypoints[0, wp_idx] - waypoints[0, wp_idx - 1]
+        )
+        speed = speed_plan[wp_idx]
+
+        # sample a point along the segment
+        path_var = rng.uniform(0.2, 1.0) if wp_idx == 1 else rng.uniform(0.0, 1.0)
+        pos = waypoints[:, wp_idx - 1] + path_var * (waypoints[:, wp_idx] - waypoints[:, wp_idx - 1])
+
+        t_arrival = np.sum(wp_seg_times[: wp_idx - 1]) + path_var * wp_seg_times[wp_idx - 1]
+        if (
+            t_arrival < timespan - 30.0
+        ):  # ensure that the vessel arrives at the waypoint before the end of the simulation
+            break
+    return np.array([pos[0], pos[1], speed, wp_seg_course]), t_arrival
+
+
+def create_circle(radius: float, n_points: int) -> Tuple[list, list]:
+    """Creates a circle with a given radius and number of points.
+
+    Args:
+        radius (float): Radius of the circle.
+        n_points (int): Number of points.
+
+    Returns:
+        Tuple[list, list]: Circle data in x and y coordinates.
+    """
+    t = np.linspace(0, 2.01 * np.pi, n_points)
+    x = radius * np.cos(t)
+    y = radius * np.sin(t)
+    return x.tolist(), y.tolist()
 
 
 def get_list_except_element_idx(input_list: list, idx: int) -> list:
@@ -879,13 +939,13 @@ def convert_3dof_state_to_sog_cog_state(xs: np.ndarray) -> np.ndarray:
     if xs.ndim == 1:
         heading = xs[2]
         crab_angle = np.arctan2(xs[4], xs[3])
-        cog = heading + crab_angle
+        cog = mf.wrap_angle_to_pmpi(heading + crab_angle)
         speed = np.sqrt(xs[3] ** 2 + xs[4] ** 2)
         return np.array([xs[0], xs[1], speed, cog])
     else:
         heading = xs[2, :]
         crab_angle = np.arctan2(xs[4, :], xs[3, :])
-        cog = heading + crab_angle
+        cog = mf.wrap_angle_to_pmpi(heading + crab_angle)
         speed = np.sqrt(np.multiply(xs[3, :], xs[3, :]) + np.multiply(xs[4, :], xs[4, :]))
         return np.array([xs[0, :], xs[1, :], speed, cog])
 

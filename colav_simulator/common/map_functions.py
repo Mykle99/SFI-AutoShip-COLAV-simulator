@@ -28,7 +28,8 @@ from cartopy.feature import ShapelyFeature
 from osgeo import osr
 from seacharts.enc import ENC
 from shapely import affinity, strtree
-from shapely.geometry import GeometryCollection, LineString, MultiLineString, MultiPolygon, Point, Polygon
+from shapely.geometry import (GeometryCollection, LineString, MultiLineString,
+                              MultiPolygon, Point, Polygon)
 
 
 def create_bbox_from_points(
@@ -214,9 +215,9 @@ def extract_safe_sea_area(
     Args:
         - min_depth (int): The minimum depth required for the vessel to avoid grounding.
         - enveloping_polygon (geometry.Polygon): The query polygon.
-        - enc (Optional[senc.ENC]): Electronic Navigational Chart object used for plotting. Defaults to None.
+        - enc (Optional[senc.ENC]): Electronic Navigational Chart object used for plotting.
         - as_polygon_list (bool, optional): Option for returning the safe sea area as a list of polygons. Defaults to False.
-        - buffer (Optional[float], optional): Safety buffer for polygons. Defaults to None.
+        - buffer (Optional[float], optional): Safety buffer for polygons.
         - show_plots (bool, optional): Option for visualization. Defaults to False.
 
     Returns:
@@ -298,16 +299,18 @@ def bbox_to_polygon(bbox: Tuple[float, float, float, float]) -> Polygon:
     return Polygon([(xmin, ymin), (xmin, ymax), (xmax, ymax), (xmax, ymin)])
 
 
-def point_in_polygon_list(point: Point, polygons: list) -> bool:
+def point_in_polygon_list(point: Point | np.ndarray, polygons: list) -> bool:
     """Checks if a point is in a list of polygons.
 
     Args:
-        point (Point): The point to check.
+        point (Point | np.ndarray): The point to check, with x being easting.
         polygons (list): List of polygons.
 
     Returns:
         bool: True if the point is in a hazard, False otherwise.
     """
+    if isinstance(point, np.ndarray):
+        point = Point(point[1], point[0])
     for poly in polygons:
         if point.within(poly) or point.touches(poly):
             return True
@@ -386,8 +389,8 @@ def create_safe_sea_triangulation(
     Args:
         enc (ENC): Electronic Navigational Chart object.
         vessel_min_depth (int, optional): The safe minimum depth for the vessel to voyage in. Defaults to 5.
-        bbox (Optional[Tuple[float, float, float, float]]): Bounding box of the safe sea region to constrain the cdt within. Defaults to None.
-        buffer (Optional[float], optional): Safety buffer for polygons. Defaults to None.
+        bbox (Optional[Tuple[float, float, float, float]]): Bounding box of the safe sea region to constrain the cdt within.
+        buffer (Optional[float], optional): Safety buffer for polygons.
         show_plots (bool, optional): Option for visualization. Defaults to True.
 
     Returns:
@@ -421,7 +424,7 @@ def create_region_polygons_from_voronoi(vor: scipy_spatial.Voronoi, enc: Optiona
 
     Args:
         vor (scipy_spatial.Voronoi): The Voronoi diagram.
-        enc (Optional[ENC], optional): The Electronic Navigational Chart object. Defaults to None.
+        enc (Optional[ENC], optional): The Electronic Navigational Chart object.
 
     Returns:
         list: List of polygons.
@@ -525,7 +528,7 @@ def extract_relevant_grounding_hazards_as_union(
     Args:
         vessel_min_depth (int): The minimum depth required for the vessel to avoid grounding.
         enc (senc.ENC): The ENC to check for grounding.
-        buffer (Optional[float], optional): Buffer for polygons. Defaults to None.
+        buffer (Optional[float], optional): Buffer for polygons.
         show_plots (bool, optional): Option for visualization. Defaults to False.
 
     Returns:
@@ -540,19 +543,17 @@ def extract_relevant_grounding_hazards_as_union(
     relevant_hazards = [enc.land.geometry.union(enc.shore.geometry).union(dangerous_seabed)]
     filtered_relevant_hazards = []
     for hazard in relevant_hazards:
-        if isinstance(hazard, MultiPolygon):
-            poly = MultiPolygon(Polygon(p.exterior) for p in hazard.geoms if isinstance(p, Polygon))
-        elif isinstance(hazard, Polygon):
-            poly = MultiPolygon([Polygon(hazard.exterior)])
-        else:
-            continue
-
+        poly = hazard
         if buffer is not None:
             poly = poly.buffer(buffer)
+
+        if isinstance(hazard, Polygon):
+            poly = MultiPolygon([Polygon(hazard.exterior)])
 
         # remove interior
         if isinstance(poly, MultiPolygon):
             poly = MultiPolygon(Polygon(p.exterior) for p in poly.geoms if isinstance(p, Polygon))
+
         filtered_relevant_hazards.append(poly)
 
     if show_plots:
@@ -1593,18 +1594,19 @@ def generate_random_position_from_draft(
     draft: float,
     safe_sea_cdt: Optional[list] = None,
     safe_sea_cdt_weights: Optional[list] = None,
-    min_land_clearance: float = 50.0,
+    min_hazard_clearance: float = 30.0,
 ) -> Tuple[float, float]:
     """
     Randomly defining easting and northing coordinates of a ship
-    inside the safe sea region by considering a ship draft, with an optional land clearance distance.
+    inside the safe sea region by considering a ship draft.
 
     Args:
         - rng (np.random.Generator): Numpy random generator.
         - enc (ENC): Electronic Navigational Chart object
         - draft (float): Ship's draft in meters.
-        - safe_sea_cdt (Optional[list]): List of triangles defining the safe sea region, used to sample more efficiently. Defaults to None.
-        - safe_sea_cdt_weights (Optional[list]): List of weights for the safe sea region triangles, used to sample more efficiently. Defaults to None.
+        - safe_sea_cdt (Optional[list]): List of triangles defining the safe sea region, used to sample more efficiently.
+        - safe_sea_cdt_weights (Optional[list]): List of weights for the safe sea region triangles, used to sample more efficiently.
+        - min_hazard_clearance (float, optional): Minimum distance to ENC hzards. Defaults to 50.0.
 
     Returns:
         - Tuple[float, float]: Tuple of starting x and y coordinates for the ship.
@@ -1616,7 +1618,7 @@ def generate_random_position_from_draft(
     max_iter = 1000
     northing = enc.bbox[1] + 0.5 * (enc.bbox[3] - enc.bbox[1])
     easting = enc.bbox[0] + 0.5 * (enc.bbox[2] - enc.bbox[0])
-    for i in range(max_iter):
+    for _ in range(max_iter):
         if safe_sea_cdt is not None:
             p = mhm.sample_from_triangulation(rng, safe_sea_cdt, safe_sea_cdt_weights)
             easting, northing = p[0], p[1]
@@ -1624,11 +1626,37 @@ def generate_random_position_from_draft(
             easting, northing = rng.uniform(bbox[0], bbox[2]), rng.uniform(bbox[1], bbox[3])
 
         inside_bbox = mhm.inside_bbox(np.array([northing, easting]), (bbox[1], bbox[0], bbox[3], bbox[2]))
-        d2land = enc.land.geometry.distance(Point(easting, northing))
-        if safe_sea.geometry.contains(Point(easting, northing)) and inside_bbox and d2land >= min_land_clearance:
+        d2land = distance_to_enc_hazards(easting, northing, depth, enc)
+        if safe_sea.geometry.contains(Point(easting, northing)) and inside_bbox and d2land >= min_hazard_clearance:
             break
 
     return northing, easting
+
+
+def distance_to_enc_hazards(x: float, y: float, min_depth: int, enc: ENC, hazards: Optional[list] = None) -> float:
+    """Computes the distance to the closest ENC hazard.
+
+    Args:
+        x (float): The easting coordinate.
+        y (float): The northing coordinate.
+        enc (ENC): The ENC object.
+        hazards (Optional[list], optional): List of Multipolygon/Polygon objects that are relevant. Used if not none.
+
+    Returns:
+        float: The distance to the closest ENC hazard.
+    """
+    if hazards is None:
+        hazards = extract_relevant_grounding_hazards_as_union(min_depth, enc)
+
+    point = Point(x, y)
+    min_dist = 1e12
+    for hazard in hazards:
+        if hazard.is_empty:
+            continue
+        dist = point.distance(hazard)
+        if dist < min_dist:
+            min_dist = dist
+    return min_dist
 
 
 def find_closest_collision_free_point_on_segment(
@@ -1641,7 +1669,7 @@ def find_closest_collision_free_point_on_segment(
         p1 (np.ndarray): First position [x1, y1]^T. x = north, y = east.
         p2 (np.ndarray): Second position.
         draft (float, optional): Vessel draft. Defaults to 5.0.
-        hazards (Optional[list], optional): List of Multipolygon/Polygon objects that are relevant. Used if not none. Defaults to None.
+        hazards (Optional[list], optional): List of Multipolygon/Polygon objects that are relevant. Used if not none.
         min_dist (float, optional): Minimum distance to the hazard. Defaults to 5.0.
 
     Returns:
@@ -2075,7 +2103,7 @@ def check_if_segment_crosses_grounding_hazards(
         p1 (np.ndarray): First position [x1, y1]^T. x = north, y = east.
         p2 (np.ndarray): Second position.
         draft (float): Ship's draft in meters.¨
-        hazards (Optional[list]): List of Multipolygon/Polygon objects that are relevant. Used if not none. Defaults to None.
+        hazards (Optional[list]): List of Multipolygon/Polygon objects that are relevant. Used if not none.
 
     Returns:
         bool: True if path segment crosses land, False otherwise.
@@ -2208,7 +2236,7 @@ def extract_hazards_within_bounding_box(
     Args:
         hazards (list): List of Multipolygon hazards to consider.
         bbox (Tuple[float, float, float, float]): Bounding box to consider in the form (x_min, y_min, x_max, y_max), x = easting, y = northing.
-        enc (Optional[ENC], optional): Electronic Navigational Chart object. Defaults to None.
+        enc (Optional[ENC], optional): Electronic Navigational Chart object.
         show_plots (bool, optional): Whether to show plots or not. Defaults to False.
 
     Returns:
@@ -2244,6 +2272,7 @@ def extract_polygons_near_trajectory(
     geometry_tree: strtree.STRtree,
     buffer: float,
     enc: ENC = None,
+    clip_to_bbox: bool = True,
     show_plots: bool = False,
 ) -> Tuple[list, Polygon]:
     """Extracts the polygons that are relevant for the trajectory of the vessel, inside a corridor of the given buffer size.
@@ -2252,15 +2281,17 @@ def extract_polygons_near_trajectory(
         - trajectory (np.ndarray): Trajectory to consider.
         - geometry_tree (strtree.STRtree): The rtree containing the relevant grounding hazard polygons.
         - buffer (float): Buffer size
-        - enc (Optional[ENC]): Electronic Navigational Chart object used for plotting. Defaults to None.
+        - enc (Optional[ENC]): Electronic Navigational Chart object used for plotting.
+        - clip_to_bbox (bool, optional): Whether to clip the polygons to the bounding box or not.
         - show_plots (bool, optional): Whether to show plots or not. Defaults to False.
 
     Returns:
         Tuple[list, Polygon]: List of tuples of relevant polygons inside query/envelope polygon and the corresponding original polygon they belong to. Also returns the query polygon.
     """
     enveloping_polygon = generate_enveloping_polygon(trajectory, buffer)
-    bbox_poly = bbox_to_polygon(enc.bbox)
-    enveloping_polygon = enveloping_polygon.intersection(bbox_poly)
+    if clip_to_bbox:
+        bbox_poly = bbox_to_polygon(enc.bbox)
+        enveloping_polygon = enveloping_polygon.intersection(bbox_poly)
     polygons_near_trajectory_indices = geometry_tree.query(enveloping_polygon)
     polygons_near_trajectory = [geometry_tree.geometries[idx] for idx in polygons_near_trajectory_indices]
     poly_list = []
@@ -2273,16 +2304,20 @@ def extract_polygons_near_trajectory(
         if isinstance(intersection_poly, MultiPolygon):
             for sub_poly in intersection_poly.geoms:
                 relevant_poly_list.append(sub_poly)
-        else:
+        elif isinstance(intersection_poly, Polygon):
             relevant_poly_list.append(intersection_poly)
+        elif isinstance(intersection_poly, LineString):
+            relevant_poly_list.append(intersection_poly.buffer(0.1))
+        elif isinstance(intersection_poly, Point):
+            relevant_poly_list.append(Polygon(intersection_poly.buffer(0.1)))
         poly_list.append((relevant_poly_list, poly))
 
     if enc is not None and show_plots:
         enc.start_display()
         enc.draw_polygon(enveloping_polygon, color="yellow", alpha=0.2)
-        # for poly_sublist, _ in poly_list:
-        #     for poly in poly_sublist:
-        #         enc.draw_polygon(poly, color="red", fill=False)
+        for poly_sublist, _ in poly_list:
+            for poly in poly_sublist:
+                enc.draw_polygon(poly, color="red", fill=True, alpha=0.5)
 
     return poly_list, enveloping_polygon
 
@@ -2295,7 +2330,7 @@ def extract_boundary_polygons_inside_envelope(
     Args:
         - poly_tuple_list (list): List of tuples with relevant polygons inside query/envelope polygon and the corresponding original polygon they belong to.
         - enveloping_polygon (Polygon): The query polygon.
-        - enc (Optional[senc.ENC]): Electronic Navigational Chart object used for plotting. Defaults to None.
+        - enc (Optional[senc.ENC]): Electronic Navigational Chart object used for plotting.
         - show_plots (bool, optional): Whether to show plots or not. Defaults to False.
 
     Returns:

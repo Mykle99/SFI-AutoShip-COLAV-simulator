@@ -50,10 +50,15 @@ episode_generation:
       required: False
       nullable: True
       type: integer
-    position_generation:
+    ownship_position_generation:
       required: False
       nullable: True
       type: string
+    target_position_generation:
+      required: False
+      nullable: True
+      type: string
+
     delta_uniform_position_sample:
       required: False
       nullable: True
@@ -240,6 +245,29 @@ stochasticity:
         sigma_direction:
           required: True
           type: float
+        add_impulse_noise:
+          required: False
+          type: boolean
+        speed_impulses:
+          required: False
+          type: list
+          minlength: 1
+          schema:
+            type: float
+        direction_impulses:
+          required: False
+          type: list
+          minlength: 1
+          schema:
+            type: float
+        impulse_times:
+          required: False
+          type: list
+          minlength: 1
+          schema:
+            type: float
+
+
     waves: # TBD
       required: False
       type: dict
@@ -249,7 +277,6 @@ stochasticity:
       required: False
       type: dict
       nullable: True
-
       schema:
         constant:
           required: True
@@ -278,6 +305,27 @@ stochasticity:
         sigma_direction:
           required: True
           type: float
+        add_impulse_noise:
+          required: False
+          type: boolean
+        speed_impulses:
+          required: False
+          type: list
+          minlength: 1
+          schema:
+            type: float
+        direction_impulses:
+          required: False
+          type: list
+          minlength: 1
+          schema:
+            type: float
+        impulse_times:
+          required: False
+          type: list
+          minlength: 1
+          schema:
+            type: float
 
 ship_list:
   required: False

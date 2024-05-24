@@ -117,6 +117,7 @@ class COLAVEnvironment(gym.Env):
         self.render_mode = render_mode
         self.render_update_rate = render_update_rate
         self._viewer2d = self.simulator.visualizer
+        self._live_plot_closed: bool = True
         self.test_mode = test_mode
         self.verbose: bool = verbose
         self.current_frame: np.ndarray = np.zeros((1, 1, 3), dtype=np.uint8)
@@ -128,10 +129,15 @@ class COLAVEnvironment(gym.Env):
                 show=show_loaded_scenario_data,
                 shuffle=shuffle_loaded_scenario_data,
                 merge_loaded_scenario_episodes=merge_loaded_scenario_episodes,
+                max_number_of_episodes=self.max_number_of_episodes,
             )
             self.loaded_scenario_data = True
         else:
-            self._generate(scenario_config=self.scenario_config, reload_map=self.reload_map)
+            self._generate(
+                scenario_config=self.scenario_config,
+                reload_map=self.reload_map,
+                max_number_of_episodes=self.max_number_of_episodes,
+            )
 
         assert isinstance(self.scenario_config, sc.ScenarioConfig), "Scenario config not initialized properly!"
         self._has_init_generated = True
@@ -144,6 +150,7 @@ class COLAVEnvironment(gym.Env):
             sconfig=episode_data["config"],
             enc=scenario_enc,
             disturbance=episode_data["disturbance"],
+            seed=seed,
         )
         self.ownship = self.simulator.ownship
 
@@ -163,6 +170,7 @@ class COLAVEnvironment(gym.Env):
         self.done = True
         if self._viewer2d is not None:
             self._viewer2d.close_live_plot()
+            self._live_plot_closed = True
 
     def _define_spaces(self) -> None:
         """Defines the action and observation spaces."""
@@ -201,6 +209,7 @@ class COLAVEnvironment(gym.Env):
         show: bool = False,
         shuffle: bool = False,
         merge_loaded_scenario_episodes: bool = False,
+        max_number_of_episodes: Optional[int] = None,
     ) -> None:
         """Load scenario episodes from files or a folder.
 
@@ -210,6 +219,7 @@ class COLAVEnvironment(gym.Env):
             show (bool): Whether to show the scenario(s) data or not.
             shuffle (bool): Whether to shuffle the scenario(s) episode data or not.
             merge_loaded_scenario_episodes (bool): Whether to merge the scenario episodes into one scenario or not.
+            max_number_of_episodes (Optional[int]): Maximum number of episodes to load.
         """
         name = (
             scenario_file_folder.name
@@ -221,7 +231,7 @@ class COLAVEnvironment(gym.Env):
             scenario_name=name,
             reload_map=reload_map,
             show=show,
-            max_number_of_episodes=self.max_number_of_episodes,
+            max_number_of_episodes=max_number_of_episodes,
             shuffle_episodes=shuffle,
             merge_scenario_episodes=merge_loaded_scenario_episodes,
         )
@@ -231,25 +241,27 @@ class COLAVEnvironment(gym.Env):
         self,
         scenario_config: Optional[sc.ScenarioConfig | pathlib.Path] = None,
         reload_map: Optional[bool] = None,
+        max_number_of_episodes: Optional[int] = None,
     ) -> None:
         """Generate new scenario from the input configuration.
 
         Args:
             scenario_config (Optional[sm.ScenarioConfig | pathlib.Path]): Scenario configuration or path to scenario config file.
             reload_map (bool): Whether to reload the scenario map.
+            max_number_of_episodes (Optional[int]): Maximum number of episodes to generate.
         """
         if isinstance(scenario_config, pathlib.Path):
             self.scenario_data_tup = self.scenario_generator.generate(
                 config_file=scenario_config,
                 new_load_of_map_data=reload_map,
-                n_episodes=self.max_number_of_episodes,
+                n_episodes=max_number_of_episodes,
                 show_plots=False,
             )
         else:
             self.scenario_data_tup = self.scenario_generator.generate(
                 config=scenario_config,
                 new_load_of_map_data=reload_map,
-                n_episodes=self.max_number_of_episodes,
+                n_episodes=max_number_of_episodes,
                 show_plots=False,
             )
         self.scenario_config = self.scenario_data_tup[0][0]["config"]
@@ -311,8 +323,12 @@ class COLAVEnvironment(gym.Env):
         self.last_reward = 0.0
         self.done = False
 
-        if self.episodes == self.n_episodes:
-            self._generate(scenario_config=self.scenario_config, reload_map=False)
+        if self.episodes == self.n_episodes or self.scenario_data_tup[0] == []:
+            self._generate(
+                scenario_config=self.scenario_config,
+                reload_map=False,
+                max_number_of_episodes=self.max_number_of_episodes,
+            )
             self.episodes = 0
 
         assert self.scenario_config is not None, "Scenario config not initialized!"
@@ -325,6 +341,7 @@ class COLAVEnvironment(gym.Env):
             sconfig=episode_data["config"],
             enc=scenario_enc,
             disturbance=episode_data["disturbance"],
+            seed=seed,
         )
         self.ownship = self.simulator.ownship
 
@@ -348,7 +365,9 @@ class COLAVEnvironment(gym.Env):
         """
         self.dt_action = self.action_type.get_sampling_time()
         n_steps_between_actions = int(self.dt_action / self.simulator.dt)
-        action_kwargs = {"applied": False}  # Used for action types where it
+        action_kwargs = {
+            "applied": False
+        }  # Used for action types where it is important to know if the action has been applied
         for _ in range(n_steps_between_actions):
             self.action_type.act(action, **action_kwargs)
             action_kwargs["applied"] = True
@@ -378,17 +397,30 @@ class COLAVEnvironment(gym.Env):
                 self._viewer2d.set_update_rate(self.render_update_rate)
             self._viewer2d.init_live_plot(self.enc, self.simulator.ship_list, fignum=self.env_id)
             self._viewer2d.update_live_plot(
-                self.simulator.t, self.enc, self.simulator.ship_list, self.simulator.recent_sensor_measurements
+                self.simulator.t,
+                self.enc,
+                self.simulator.ship_list,
+                self.simulator.recent_sensor_measurements,
+                self.simulator.disturbance.get() if self.simulator.disturbance is not None else None,
+                remote_actor=True,
             )
+            self._live_plot_closed = False
 
     def render(self):
         """Renders the environment in 2D."""
         img = None
-        self._viewer2d.update_live_plot(
-            self.simulator.t, self.enc, self.simulator.ship_list, self.simulator.recent_sensor_measurements
-        )
+        if self._live_plot_closed:
+            self._init_render()
 
         if self.render_mode == "rgb_array":
+            self._viewer2d.update_live_plot(
+                self.simulator.t,
+                self.enc,
+                self.simulator.ship_list,
+                self.simulator.recent_sensor_measurements,
+                self.simulator.disturbance.get() if self.simulator.disturbance is not None else None,
+                remote_actor=True,
+            )
             self.current_frame = self._viewer2d.get_live_plot_image()
             img = self.current_frame
         return img
@@ -423,6 +455,11 @@ class COLAVEnvironment(gym.Env):
     def time_truncated(self) -> float:
         """The truncation time (max time)."""
         return self.simulator.t_end
+
+    @property
+    def ship_list(self) -> list:
+        """The ships in the environment."""
+        return self.simulator.ship_list
 
     @property
     def dynamic_obstacles(self) -> list:

@@ -155,6 +155,10 @@ class ICOLAV(ABC):
         """
 
     @abstractmethod
+    def reset(self):
+        """Resets the COLAV planning algorithm to its initial state."""
+
+    @abstractmethod
     def get_current_plan(self) -> np.ndarray:
         """Returns the current planned trajectory.
 
@@ -198,6 +202,12 @@ class VOWrapper(ICOLAV):
 
         self._t_prev = 0.0
         self._initialized = False
+
+    def reset(self):
+        """Resets the VO-COLAV to its initial state."""
+        self._t_prev = 0.0
+        self._initialized = False
+        self._los.reset()
 
     def plan(
         self,
@@ -263,6 +273,7 @@ class SBMPCWrapper(ICOLAV):
         self._t_run_sbmpc_last = 0.0
         self._speed_os_best = 1.0
         self._course_os_best = 0.0
+        self._los.reset()
 
     def plan(
         self,
@@ -276,9 +287,7 @@ class SBMPCWrapper(ICOLAV):
         w: Optional[stochasticity.DisturbanceData] = None,
         **kwargs
     ) -> np.ndarray:
-        if t == 0:
-            self.reset()
-        if not self._initialized:
+        if not self._initialized or t < 0.0001:
             self._t_prev = t
             self._initialized = True
 

@@ -80,20 +80,20 @@ class VIMMJIPDAParams:
 @dataclass
 class Config:
     """Class for holding tracker configuration parameters."""
-    #TODO: Add possibility to config VIMMJIPDA
-
-    god_tracker: Optional[bool] = False
-    kf: Optional[KFParams] = field(default_factory=lambda: KFParams())
-    VIMMJIPDA: Optional[VIMMJIPDAParams] = field(default_factory=lambda: VIMMJIPDAParams())
+    
+    god_tracker: Optional[bool] = True
+    kf: Optional[KFParams] = None
+    VIMMJIPDA: Optional[VIMMJIPDAParams] = None
 
     def to_dict(self) -> dict:
         output_dict = {}
         if self.kf is not None:
             output_dict["kf"] = self.kf.to_dict()
-        elif self.god_tracker is not False:
+        elif self.god_tracker is not None:
             output_dict["god_tracker"] = ""
         elif self.VIMMJIPDA is not None:
             output_dict["VIMMJIPDA"] = self.VIMMJIPDA.to_dict()
+
         return output_dict
 
     @classmethod
@@ -102,7 +102,7 @@ class Config:
 
         if "kf" in config_dict:
             config.kf = cp.convert_settings_dict_to_dataclass(KFParams, config_dict["kf"])
-            config.god_tracker = False
+            config.god_tracker = None
             config.VIMMJIPDA = None
         elif "god_tracker" in config_dict:
             config.god_tracker = True
@@ -110,8 +110,9 @@ class Config:
             config.VIMMJIPDA = None
         elif "VIMMJIPDA" in config_dict:
             config.VIMMJIPDA = cp.convert_settings_dict_to_dataclass(VIMMJIPDAParams, config_dict["VIMMJIPDA"])
-            config.god_tracker = False
+            config.god_tracker = None
             config.kf = None
+
         return config
 
 

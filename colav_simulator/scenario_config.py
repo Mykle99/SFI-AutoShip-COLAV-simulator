@@ -284,6 +284,10 @@ class ScenarioConfig:
         if "stochasticity" in config_dict:
             if config_dict["stochasticity"] != None:
                 stoch_in_config_dict = True
+        rl_in_config_dict = False
+        if "rl" in config_dict:
+            if config_dict["rl"] != None:
+                rl_in_config_dict = True
         config = ScenarioConfig(
             name=config_dict["name"],
             save_scenario=config_dict["save_scenario"],
@@ -309,7 +313,7 @@ class ScenarioConfig:
             stochasticity=(
                 stoch.Config.from_dict(config_dict["stochasticity"]) if stoch_in_config_dict else None
             ),
-            rl=RLConfig.from_dict(config_dict["rl"]) if "rl" in config_dict else None,
+            rl=RLConfig.from_dict(config_dict["rl"]) if rl_in_config_dict else None,
             ship_list=[],
         )
 

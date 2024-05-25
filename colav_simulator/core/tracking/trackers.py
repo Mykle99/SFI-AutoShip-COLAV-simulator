@@ -90,9 +90,9 @@ class Config:
         output_dict = {}
         if self.kf is not None:
             output_dict["kf"] = self.kf.to_dict()
-        if self.god_tracker is not None:
+        elif self.god_tracker is not False:
             output_dict["god_tracker"] = ""
-        if self.VIMMJIPDA is not None:
+        elif self.VIMMJIPDA is not None:
             output_dict["VIMMJIPDA"] = self.VIMMJIPDA.to_dict()
         return output_dict
 
@@ -102,16 +102,16 @@ class Config:
 
         if "kf" in config_dict:
             config.kf = cp.convert_settings_dict_to_dataclass(KFParams, config_dict["kf"])
-            config.god_tracker = None
+            config.god_tracker = False
+            config.VIMMJIPDA = None
         elif "god_tracker" in config_dict:
             config.god_tracker = True
             config.kf = None
             config.VIMMJIPDA = None
         elif "VIMMJIPDA" in config_dict:
+            config.VIMMJIPDA = cp.convert_settings_dict_to_dataclass(VIMMJIPDAParams, config_dict["VIMMJIPDA"])
             config.god_tracker = False
             config.kf = None
-            config.VIMMJIPDA = cp.convert_settings_dict_to_dataclass(VIMMJIPDAParams, config_dict["VIMMJIPDA"])
-
         return config
 
 
@@ -506,6 +506,16 @@ class VIMMJIPDA(ITracker):
         
         self._manager: Manager = setup_manager(self._params.IMM_off, self._params.single_target, self._params.visibility_off)
         self._sorted_track_indexes: list = []
+
+    def reset(self) -> None:
+        self._track_initialized = []
+        self._track_terminated = []
+        self._labels = []
+        self._means = []
+        self._covs = []
+        self._length_upd = []
+        self._width_upd = []
+        self._NIS = []
 
     def track(self, t: float, dt: float, true_do_states: list, ownship_state: np.ndarray) -> Tuple[list, list]:
         """Tracks/updates estimates on dynamic obstacles, based on sensor measurements

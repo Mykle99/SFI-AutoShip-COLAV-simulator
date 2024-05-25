@@ -5,7 +5,7 @@ from colav_simulator.scenario_generator import Config, ScenarioGenerator
 if __name__ == "__main__":
     sg_config = Config()
     sg_config.behavior_generator.ownship_method = BehaviorGenerationMethod.ConstantSpeedAndCourse
-    sg_config.behavior_generator.target_ship_method = BehaviorGenerationMethod.RRTStar
+    sg_config.behavior_generator.target_ship_method = BehaviorGenerationMethod.ConstantSpeedAndCourse # RRTStar
     sg_config.behavior_generator.target_ship_rrt_behavior_sampling_method = (
         RRTBehaviorSamplingMethod.OwnshipWaypointCorridor
     )

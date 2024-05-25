@@ -68,16 +68,25 @@ ship_list:
     # speed_plan: [4.0, 4.0, 4.0, 4.0, 4.0]
     goal_csog_state: [6574800.0, -30584, 4.0, 0.0] #[6583580.0, -31824.0, 0.0, 0.0]
     tracker:
+      #VIMMJIPDA:
+      #  IMM_off: True
+      #  single_target: False
+      #  visibility_off: True
+      #god_tracker: ""
       kf:
         P_0: [49.1, 49.1, 0.11, 0.11]
-        q: 1.0
-      # god_tracker: ""
+        q: 0.1
     sensors:
       - radar:
-          max_range: 5000.0
+          max_range: 1000.0
           measurement_rate: 0.5
-          R: [30.0, 30.0]
-          R_true: [25.0, 25.0]
+          R_cartesian: [25.0, 25.0]
+          R_cartesian_true: [25.0, 25.0]
+          generate_clutter: True
+          clutter_cardinality_expectation: 5
+          P_D: 0.92
+          include_polar_meas_noise: True
+          R_polar: [64.0, 0.00030461768]
       - ais:
           max_range: 5000.0
           ais_class: A
@@ -110,15 +119,25 @@ ship_list:
     id: 1
     mmsi: 101
     tracker:
-      kf:
-        P_0: [49.1, 49.1, 0.11, 0.11]
-        q: 0.15
+      VIMMJIPDA:
+        IMM_off: True
+        single_target: False
+        visibility_off: True
+      #god_tracker: ""
+      #kf:
+      #  P_0: [49.1, 49.1, 0.11, 0.11]
+      #  q: 0.1
     sensors:
       - radar:
-          max_range: 5000.0
+          max_range: 1000.0
           measurement_rate: 0.5
-          R: [25.0, 25.0]
-          R_true: [25.0, 25.0]
+          R_cartesian: [25.0, 25.0]
+          R_cartesian_true: [25.0, 25.0]
+          generate_clutter: True
+          clutter_cardinality_expectation: 5
+          P_D: 0.92
+          include_polar_meas_noise: True
+          R_polar: [64.0, 0.00030461768]
       - ais:
           max_range: 5000.0
           ais_class: A

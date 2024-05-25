@@ -427,7 +427,7 @@ ship_list:
                 max: 1.0
           VIMMJIPDA:
             type: dict
-            excludes: [kf,god_tracker]
+            excludes: [kf, god_tracker]
             schema:
               IMM_off:
                 required: True

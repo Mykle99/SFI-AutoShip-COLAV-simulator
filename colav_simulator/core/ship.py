@@ -541,6 +541,8 @@ class Ship(IShip):
             t_start (float, optional): Time when the ship appears in the simulation. Defaults to 0.0.
         """
         self._state = np.array([csog_state[0], csog_state[1], csog_state[3], csog_state[2], 0.0, 0.0])
+        if csog_state[2] > self.max_speed or csog_state[2] < self.min_speed:
+            raise ValueError(f"Initial speed, U: {csog_state[2]}, is outside the ship's speed limits! See ship info (U_min: {self.min_speed} and U_max: {self.max_speed}) in models.py")
         self.t_start = t_start if t_start is not None else 0.0
 
     def set_goal_state(self, csog_state: np.ndarray) -> None:
@@ -550,6 +552,8 @@ class Ship(IShip):
             csog_state (np.ndarray): Initial COG-SOG state = [x, y, U, chi] of the ship.
         """
         self._goal_state = np.array([csog_state[0], csog_state[1], csog_state[3], csog_state[2], 0.0, 0.0])
+        if csog_state[2] > self.max_speed or csog_state[2] < self.min_speed:
+            raise ValueError(f"Goal speed, U: {csog_state[2]}, is outside the ship's speed limits! See ship info (U_min: {self.min_speed} and U_max: {self.max_speed}) in models.py")
 
     def set_nominal_plan(self, waypoints: np.ndarray, speed_plan: np.ndarray):
         """Reassigns waypoints and speed_plan to the ship, to change its objective.
@@ -565,7 +569,11 @@ class Ship(IShip):
 
         if n_wps < 2:
             raise ValueError("Insufficient number of waypoints (< 2)!")
-
+        
+        for speed in speed_plan:
+            if speed > self.max_speed or speed < self.min_speed:
+                raise ValueError(f"Planned speed, U: {speed}, is outside the ship's speed limits! See ship info (U_min: {self.min_speed} and U_max: {self.max_speed}) in models.py")
+            
         self._waypoints = waypoints
         self._speed_plan = speed_plan
 

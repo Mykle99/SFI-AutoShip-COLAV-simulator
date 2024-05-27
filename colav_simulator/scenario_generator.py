@@ -653,6 +653,7 @@ class ScenarioGenerator:
             ship_list, config_copy = self._create_partially_defined_ships(config_copy)
 
             episode = {}
+            self._bad_episode = False
             episode["ship_list"], episode["disturbance"], episode["config"] = self.generate_episode(
                 copy.deepcopy(ship_list),
                 config_copy,
@@ -827,7 +828,8 @@ class ScenarioGenerator:
 
         disturbance = self.generate_disturbance(config)
 
-        self._bad_episode, ship_list, config = self.check_for_bad_episode(ship_list, config)
+        if self._bad_episode == False:
+            self._bad_episode, ship_list, config = self.check_for_bad_episode(ship_list, config)
 
         self._prev_ship_list[: len(ship_list)] = copy.deepcopy(ship_list)
         return ship_list, disturbance, config
@@ -1067,7 +1069,7 @@ class ScenarioGenerator:
                     config,
                     ownship,
                     U_min=2.0,
-                    U_max=0.8 * ship_obj.max_speed,
+                    U_max=1.0 * ship_obj.max_speed,
                     draft=ship_obj.draft,
                     min_hazard_clearance=np.min([15.0, ship_obj.length * 3.0]),
                     first_episode_csog_state=(
@@ -1094,7 +1096,7 @@ class ScenarioGenerator:
         config: sc.ScenarioConfig,
         ownship: ship.Ship,
         U_min: float = 2.0,
-        U_max: float = 8.0,
+        U_max: float = 10.0,
         draft: float = 2.0,
         min_hazard_clearance: float = 30.0,
         first_episode_csog_state: Optional[Tuple[np.ndarray, float | None, np.ndarray | None]] = None,
@@ -1106,7 +1108,7 @@ class ScenarioGenerator:
             - config (sc.ScenarioConfig): Scenario config.
             - ownship (ship.Ship): Own-ship object.
             - U_min (float, optional): Obstacle minimum speed. Defaults to 2.0.
-            - U_max (float, optional): Obstacle maximum speed. Defaults to 8.0.
+            - U_max (float, optional): Obstacle maximum speed. Defaults to 10.0.
             - draft (float, optional): Draft of target ship. Defaults to 2.0.
             - min_hazard_clearance (float, optional): Minimum distance between target ship and grounding hazards. Defaults to 100.0.
             - first_episode_csog_state (Optional[Tuple[np.ndarray, float | None]]): First scenario episode target ship COG-SOG state, (possibly) start time and (possibly) own-ship COG-SOG state used for generating the target ship COG-SOG state.
@@ -1170,8 +1172,7 @@ class ScenarioGenerator:
         if (
             self._target_position_generation == sc.TargetPositionGenerationMethod.BasedOnOwnshipWaypoints
             or self._target_position_generation == sc.TargetPositionGenerationMethod.BasedOnOwnshipWaypointsThenGaussian
-            or self._target_position_generation
-            == sc.TargetPositionGenerationMethod.BasedOnOwnshipWaypointsThenPerpendicular
+            or self._target_position_generation == sc.TargetPositionGenerationMethod.BasedOnOwnshipWaypointsThenPerpendicular
         ):
             os_csog_state_basis, t_start = mhm.sample_state_along_waypoints(
                 self.rng,
@@ -1188,18 +1189,23 @@ class ScenarioGenerator:
             scenario_type = self.rng.choice(
                 [sc.ScenarioType.HO, sc.ScenarioType.OT_ing, sc.ScenarioType.CR_GW, sc.ScenarioType.CR_SO]
             )
+            if config.type != sc.ScenarioType.MS:
+                print("WARNING: Initial ScenarioType not MS. Setting the bad episode flag to True. Only picking new scenario types if the scenario type is set to MS.")
+                self._bad_episode = True
 
         if scenario_type == sc.ScenarioType.OT_ing and U_min >= os_csog_state_basis[2] - ot_speed_margin:
             print(
-                f"WARNING: ScenarioType = OT_ing: Own-ship speed minus margin of {ot_speed_margin} should be above the minimum target ship speed. Selecting a different scenario type..."
+                f"WARNING: Initial ScenarioType = OT_ing: Own-ship speed minus margin of {ot_speed_margin} should be above the minimum target ship speed. Selecting a different scenario type..."
             )
             scenario_type = self.rng.choice(
                 [sc.ScenarioType.HO, sc.ScenarioType.OT_en, sc.ScenarioType.CR_GW, sc.ScenarioType.CR_SO]
             )
+            if config.type != sc.ScenarioType.MS:
+                print("WARNING: Initial ScenarioType not MS. Setting the bad episode flag to True. Only picking new scenario types if the scenario type is set to MS.")
+                self._bad_episode = True
 
         min_depth = mapf.find_minimum_depth(draft, self.enc)
         max_iter = 2000
-        y_min, x_min, y_max, x_max = self.enc.bbox
         distance_os_ts = self.rng.uniform(
             self._config.dist_between_ships_range[0], self._config.dist_between_ships_range[1]
         )
@@ -1250,9 +1256,14 @@ class ScenarioGenerator:
             distance_os_ts = self.rng.uniform(
                 self._config.dist_between_ships_range[0], self._config.dist_between_ships_range[1]
             )
-            x = os_csog_state_basis[0] + distance_os_ts * np.cos(os_csog_state_basis[3] + bearing)
-            y = os_csog_state_basis[1] + distance_os_ts * np.sin(os_csog_state_basis[3] + bearing)
+            if scenario_type == sc.ScenarioType.OT_en:
+                x = os_csog_state_basis[0] - distance_os_ts * np.cos(os_csog_state_basis[3] + bearing)
+                y = os_csog_state_basis[1] - distance_os_ts * np.sin(os_csog_state_basis[3] + bearing)
+            else:
+                x = os_csog_state_basis[0] + distance_os_ts * np.cos(os_csog_state_basis[3] + bearing)
+                y = os_csog_state_basis[1] + distance_os_ts * np.sin(os_csog_state_basis[3] + bearing)
 
+            y_min, x_min, y_max, x_max = self.enc.bbox
             inside_bbox = mhm.inside_bbox(np.array([x, y]), (x_min, y_min, x_max, y_max))
             risky_enough = mhm.check_if_situation_is_risky_enough(
                 os_csog_state_basis,

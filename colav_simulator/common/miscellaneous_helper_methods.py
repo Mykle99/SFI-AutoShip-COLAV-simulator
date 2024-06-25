@@ -391,7 +391,11 @@ def convert_simulation_data_to_vessel_data(sim_data: pd.DataFrame, ship_info: di
             draft=ship_i_info["draft"],
         )
 
-        X, vessel.timestamps, vessel.datetimes_utc = extract_trajectory_data_from_dataframe(sim_data[name])
+        try:
+            X, vessel.timestamps, vessel.datetimes_utc = extract_trajectory_data_from_dataframe(sim_data[name])
+        except KeyError as e:
+            print(e)
+            continue
 
         vessel.first_valid_idx, vessel.last_valid_idx = index_of_first_and_last_non_nan(X[0, :])
         n_msgs = len(vessel.timestamps)

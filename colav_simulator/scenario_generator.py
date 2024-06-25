@@ -647,9 +647,6 @@ class ScenarioGenerator:
             config_copy = copy.deepcopy(config)
             config_copy.n_random_ships = n_random_ships
 
-            if montecarlo is not None and montecarlo is not False:
-                config_copy = self.generate_montecarlo_episode(actual_ep, config)
-
             ship_list, config_copy = self._create_partially_defined_ships(config_copy)
 
             episode = {}
@@ -692,6 +689,11 @@ class ScenarioGenerator:
                     episode["config"], save_scenario_folder
                 )
 
+            if self._config.verbose:
+                print(
+                    f"ScenarioGenerator: Episode {self._episode_counter} of {n_episodes} created. Num target ships: {n_random_ships}."
+                )
+
             scenario_episode_list.append(episode)
 
         if show_plots:
@@ -708,40 +710,6 @@ class ScenarioGenerator:
                 "WARNING: No episodes were generated. Check the scenario configuration or try different seed and increase the number of episodes."
             )
         return scenario_episode_list, enc_copy
-    
-    def generate_montecarlo_episode(self, actual_ep: int, config: sc.ScenarioConfig) -> sc.ScenarioConfig:
-        """Makes stochastic changes, as a function of actual_ep, to the scenario config for simple Monte Carlo simulation."""
-        np.random.seed(actual_ep)
-        settings_dict = config.to_dict()
-        
-        # n_random_ships = settings_dict["n_random_ships"]
-        # stochasticity  =settings_dict["stochasticity"]
-        # episode_generation = settings_dict["episode_generation"]
-        
-        ship_list = settings_dict["ship_list"]
-        for ship_dict in ship_list:
-            updated_csog_state = ship_dict["csog_state"] \
-                + np.random.multivariate_normal([0, 0, 0, 0], np.diag([500.0, 500.0, 3, 20.0]))
-            if updated_csog_state[2] < 1.0:
-                updated_csog_state[2] = 1.0
-            ship_dict["csog_state"] = updated_csog_state.tolist()
-            
-            waypoints = ship_dict["waypoints"]
-            speed_plan = ship_dict["speed_plan"]
-    
-            for i, waypoint in enumerate(waypoints):
-                updated_waypoint = waypoint \
-                    + np.random.multivariate_normal([0, 0], np.diag([500.0, 500.0]))
-                waypoints[i] = updated_waypoint.tolist()
-    
-            for j, speed in enumerate(speed_plan):
-                updated_speed = speed + np.random.normal(0, 3.0)
-                if updated_speed < 1.0:
-                    updated_speed = 1.0
-                speed_plan[j] = updated_speed  
-
-        config = cp.convert_settings_dict_to_dataclass(sc.ScenarioConfig, settings_dict) 
-        return config
 
     def _create_partially_defined_ships(self, config: sc.ScenarioConfig) -> Tuple[list, sc.ScenarioConfig]:
         """Creates partially defined ship objects and ship configurations for all ships.
@@ -1188,7 +1156,7 @@ class ScenarioGenerator:
                 config.t_end - config.t_start,
             )
 
-        ot_speed_margin = 2.0
+        ot_speed_margin = 1.0
         if scenario_type == sc.ScenarioType.OT_en and U_max - ot_speed_margin <= os_csog_state_basis[2]:
             print(
                 f"WARNING: ScenarioType = OT_en: Own-ship speed should be below the maximum target ship speed minus margin of {ot_speed_margin}. Selecting a different scenario type..."
@@ -1216,10 +1184,13 @@ class ScenarioGenerator:
         distance_os_ts = self.rng.uniform(
             self._config.dist_between_ships_range[0], self._config.dist_between_ships_range[1]
         )
+        bearing = self.rng.uniform(0.0, 2.0 * np.pi)
         if scenario_type == sc.ScenarioType.OT_en:
+            bearing = self.rng.uniform(self._config.ot_bearing_range[0], self._config.ot_bearing_range[1])
             x = os_csog_state_basis[0] - distance_os_ts * np.cos(os_csog_state_basis[3] + bearing)
             y = os_csog_state_basis[1] - distance_os_ts * np.sin(os_csog_state_basis[3] + bearing)
         else:
+            bearing = self.rng.uniform(self._config.ot_bearing_range[0], self._config.ot_bearing_range[1])
             x = os_csog_state_basis[0] + distance_os_ts * np.cos(os_csog_state_basis[3] + bearing)
             y = os_csog_state_basis[1] + distance_os_ts * np.sin(os_csog_state_basis[3] + bearing)
         speed = self.rng.uniform(U_min, U_max)

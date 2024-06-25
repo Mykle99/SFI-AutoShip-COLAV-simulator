@@ -101,7 +101,7 @@ class GaussMarkovDisturbanceParams:
         if "impulse_times" in config_dict:
             params.impulse_times = config_dict["impulse_times"]
         else:
-            params.impulse_times = np.random.random_integers(20, 150, 1).tolist()
+            params.impulse_times = np.random.randint(low=20, high=150, size=1).tolist()
             params.impulse_times.sort()
         return params
 
@@ -302,6 +302,18 @@ class Disturbance:
 
         if self._currents is not None:
             self._currents.reset(seed)
+
+    def disable_wind(self):
+        self._wind = None
+
+    def disable_currents(self):
+        self._currents = None
+
+    def enable_wind(self, config: GaussMarkovDisturbanceParams):
+        self._wind = GaussMarkovDisturbance(config)
+
+    def enable_currents(self, config: GaussMarkovDisturbanceParams):
+        self._currents = GaussMarkovDisturbance(config)
 
     def update(self, t: float, dt: float) -> None:
         """Updates the disturbance processes from time t to t + dt

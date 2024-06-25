@@ -7,14 +7,12 @@ The main functionality is contained in the `Simulator` class of `simulator.py`, 
 [![python version](https://img.shields.io/badge/python-3.11-blue)]()
 
 <p align="center">
+    <img src="https://github.com/NTNU-Autoship-Internal/colav_simulator/blob/main/mpc_teaser.gif?raw=true" width="1000px"><br/>
+    <em>Example run of an MPC-based COLAV planner in the simulator.</em>
+</p>
+<p align="center">
     <img src="https://github.com/NTNU-Autoship-Internal/colav_simulator/blob/main/teaser.gif?raw=true" width="1000px"><br/>
     <em>An episode sample from the COLAVEnvironment.</em>
-</p>
-
-
-<p align="center">
-    <img src="https://github.com/NTNU-Autoship-Internal/colav_simulator/blob/main/scenarios/example_img/aalesund_random.pdf" width="500px"><br/>
-    <em>Simulation screenshot.</em>
 </p>
 
 ## Citation
@@ -56,7 +54,7 @@ To use `seacharts` in the simulator, you should download `.gdb` files from <http
 
 If you get troubles installing `gdal`, this might be due to:
 - The native `gdal`library not being installed, see e.g. <https://github.com/OSGeo/gdal/issues/2166>
-- It not being installed correctly, maybe you need install from source or fix the gdal-version (see e.g. <https://stackoverflow.com/questions/34408699/having-trouble-installing-gdal-for-python> or <https://github.com/OSGeo/gdal/issues/2827>).
+- It not being installed correctly, maybe you need install from source or fix the gdal-version (see e.g. <https://stackoverflow.com/questions/34408699/having-trouble-installing-gdal-for-python> or <https://github.com/OSGeo/gdal/issues/2827>). An issue on the topic is found on <https://github.com/trymte/seacharts/issues/4>
 
 If you get troubles with import errors caused by not finding dependencies such as fiona, try to reinstall the dependencies causing error.
 
@@ -233,7 +231,7 @@ In case you want to develop a motion planning algorithm that provides low-level 
 The ship `plan` step will then entail that you use your wrapped `colav` system, that provide `references` that are low-level inputs. When these are passed to the `controller` object during the `forward` call, they will pass straight through and go into the ship model object.
 
 #### Godlike Target Tracking (Ground Truth Tracking)
-If you want to test your planning algorithm with perfect knowlegde on nearby vessels, you can specify the `GodTracker` to be used under `tracker` in the scenario configuration file. As this object has no parameters, the configuration entry is an empty string `god_tracker: ''` (see `schemas/scenario.yaml` for clues).
+If you want to test your planning algorithm with perfect knowledge on nearby vessels, you can specify the `GodTracker` to be used under `tracker` in the scenario configuration file. As this object has no parameters, the configuration entry is an empty string `god_tracker: ''` (see `schemas/scenario.yaml` for clues).
 
 #### Simple Kalman-filter based Target Tracking
 The standard support for target tracking in the simulator is to use a Kalman Filter for estimating the states of nearby vessels. Most of the scenario files have examples on how to configure this tracker. Tune the measurement covariance (R) through the sensor configuration, and adjust the scenario configuration based on whether or not you want to consider AIS-measurements, Radar-measurements or both.
@@ -243,6 +241,8 @@ The `colav_interface.py` provides an interface for arbitrary `COLAV` planning al
 
 
 ## Future Enhancements (Roadmap)
+- Create github actions for CI/CD pipeline.
+- Mandate unittesting of all modules and their core functionality.
 - Improve random generation of vessel COLREGS scenarios. E.g. use AIS data to sample "realistic" vessel trajectories based on a fitted distribution for historical vessel positions and velocities.
 - Improve live-visualization in the simulator w.r.t. code readability and run-time. Switch out matplotlib for a faster backend.
 - Add functionality for saving simulation results to file.

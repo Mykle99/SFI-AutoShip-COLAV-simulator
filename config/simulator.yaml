@@ -1,7 +1,8 @@
 save_scenario_results: False
-verbose: True
+verbose: False
+tracking_from_ownship_only: True
 visualizer:
-  show_liveplot: True
+  show_liveplot: False
   show_liveplot_colav_results: False
   show_liveplot_measurements: False
   show_liveplot_target_tracks: False
@@ -20,7 +21,7 @@ visualizer:
   show_target_tracking_results: False
   show_trajectory_tracking_results: False
   save_result_figures: False
-  save_liveplot_animation: False
+  save_liveplot_animation: True
   show_results: False
   dark_mode_liveplot: True
   update_rate_liveplot: 1.0 # relative to simulation time, not wall

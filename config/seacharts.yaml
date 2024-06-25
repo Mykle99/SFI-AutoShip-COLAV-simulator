@@ -10,7 +10,7 @@ enc:
   new_data: false                                                          # bool indicating if new files should be parsed
   raw_data: false
   border: false                                                           # bool for showing a border around the environment plot
-  verbose: True                                                           # bool for status printing during geometry processing
+  verbose: false                                                           # bool for status printing during geometry processing
   #origin_lla: [62.457464, 6.146678]                                       # origin in latitude longitude (degrees) for transformation purposes (NOT IMPLEMENTED YET)
 
 display:

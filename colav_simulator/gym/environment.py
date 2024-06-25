@@ -11,7 +11,10 @@
 import pathlib
 from typing import List, Optional, Tuple
 
+import colav_simulator.core.ship as cs_ship
 import colav_simulator.core.stochasticity as stoch
+import colav_simulator.gym.action as csgym_action
+import colav_simulator.gym.observation as csgym_obs
 import colav_simulator.gym.reward as rw
 import colav_simulator.scenario_config as sc
 import colav_simulator.scenario_generator as sg
@@ -19,9 +22,6 @@ import colav_simulator.simulator as cssim
 import gymnasium as gym
 import numpy as np
 import seacharts.enc as senc
-from colav_simulator.core.ship import Ship
-from colav_simulator.gym.action import Action, ActionType, action_factory
-from colav_simulator.gym.observation import Observation, ObservationType, observation_factory
 
 
 class COLAVEnvironment(gym.Env):
@@ -32,8 +32,8 @@ class COLAVEnvironment(gym.Env):
     """
 
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 30, "video.frames_per_second": 30}
-    observation_type: ObservationType
-    action_type: ActionType
+    observation_type: csgym_obs.ObservationType
+    action_type: csgym_action.ActionType
     scenario_config: sc.ScenarioConfig
     scenario_data_tup: tuple
 
@@ -111,12 +111,13 @@ class COLAVEnvironment(gym.Env):
         self.steps: int = 0
         self.last_info: dict = {}
         self.last_reward: float = 0.0
+        self.terminal_info: dict = {}
         self.episodes: int = 0
         self.n_episodes: int = 0
-        self.ownship: Optional[Ship] = None
+        self.ownship: Optional[cs_ship.Ship] = None
         self.render_mode = render_mode
         self.render_update_rate = render_update_rate
-        self._viewer2d = self.simulator.visualizer
+        self.viewer2d = self.simulator.visualizer
         self._live_plot_closed: bool = True
         self.test_mode = test_mode
         self.verbose: bool = verbose
@@ -168,8 +169,8 @@ class COLAVEnvironment(gym.Env):
     def close(self):
         """Closes the environment. To be called after usage."""
         self.done = True
-        if self._viewer2d is not None:
-            self._viewer2d.close_live_plot()
+        if self.viewer2d is not None:
+            self.viewer2d.close_live_plot()
             self._live_plot_closed = True
 
     def _define_spaces(self) -> None:
@@ -180,8 +181,8 @@ class COLAVEnvironment(gym.Env):
         assert (
             self.dt_action % self.simulator.dt == 0.0
         ), "Action sampling time must be a multiple of simulator time step!"
-        self.action_type = action_factory(self, self.action_type_cfg, sample_time=self.dt_action)
-        self.observation_type = observation_factory(self, self.observation_type_cfg)
+        self.action_type = csgym_action.action_factory(self, self.action_type_cfg, sample_time=self.dt_action)
+        self.observation_type = csgym_obs.observation_factory(self, self.observation_type_cfg)
 
         self.action_space = self.action_type.space()
         self.observation_space = self.observation_type.space()
@@ -266,7 +267,7 @@ class COLAVEnvironment(gym.Env):
             )
         self.scenario_config = self.scenario_data_tup[0][0]["config"]
 
-    def _info(self, obs: Observation, action: Optional[Action] = None) -> dict:
+    def _info(self, obs: csgym_obs.Observation, action: Optional[csgym_action.Action] = None) -> dict:
         """Returns a dictionary of additional information as defined by the environment.
 
         Args:
@@ -279,6 +280,7 @@ class COLAVEnvironment(gym.Env):
         unnormalized_obs = self.observation_type.unnormalize(obs)
         unnormalized_action = self.action_type.unnormalize(action) if action is not None else None
         self.last_info = {
+            "episode_name": self.simulator.sconfig.name,
             "duration": self.simulator.t,
             "timesteps": self.steps,
             "episode_nr": self.episodes,
@@ -287,10 +289,15 @@ class COLAVEnvironment(gym.Env):
             "grounding": self.simulator.determine_ship_grounding(ship_idx=0),
             "distance_to_collision": np.min(self.simulator.distance_to_nearby_vessels(ship_idx=0)),
             "distance_to_grounding": self.simulator.distance_to_grounding(ship_idx=0),
-            "action": action,
-            "unnormalized_action": unnormalized_action,
-            "unnormalized_obs": unnormalized_obs,
+            "truncated": self._is_truncated(),
+            # "unnormalized_action": unnormalized_action,
+            # "unnormalized_obs": unnormalized_obs,
+            "os_heading": self.ownship.heading,
+            "os_speed": self.ownship.speed,
+            "os_course": self.ownship.course,
             "reward": self.last_reward,
+            "reward_components": self.rewarder.get_last_rewards_as_dict(),
+            "render_frame": self.current_frame if self.render_mode == "rgb_array" else None,
         }
         return self.last_info
 
@@ -308,7 +315,7 @@ class COLAVEnvironment(gym.Env):
         self,
         seed: Optional[int] = None,
         options: Optional[dict] = None,
-    ) -> Tuple[Observation, dict]:
+    ) -> Tuple[csgym_obs.Observation, dict]:
         """Reset the environment to a new scenario episode. If a scenario config or config file is provided, a new scenario is generated. Otherwise, the next episode of the current scenario is used, if any.
 
         Args:
@@ -336,6 +343,7 @@ class COLAVEnvironment(gym.Env):
 
         episode_data = scenario_episode_list.pop(0)
 
+        episode_data["disturbance"].disable_wind()
         self.simulator.initialize_scenario_episode(
             ship_list=episode_data["ship_list"],
             sconfig=episode_data["config"],
@@ -354,7 +362,7 @@ class COLAVEnvironment(gym.Env):
         self.episodes += 1  # Episodes performed
         return obs, info
 
-    def step(self, action: Action) -> Tuple[Observation, float, bool, bool, dict]:
+    def step(self, action: csgym_action.Action) -> Tuple[csgym_obs.Observation, float, bool, bool, dict]:
         """Perform an action in the environment and return the new observation, the reward, whether the task is terminated, and additional information.
 
         Args:
@@ -385,6 +393,9 @@ class COLAVEnvironment(gym.Env):
         self.last_reward = reward
 
         info = self._info(obs, action)
+        if terminated or truncated:
+            self.terminal_info = info
+
         self.steps += 1
 
         return obs, reward, terminated, truncated, info
@@ -392,11 +403,11 @@ class COLAVEnvironment(gym.Env):
     def _init_render(self) -> None:
         """Initializes the renderer."""
         if self.render_mode == "human" or self.render_mode == "rgb_array":
-            self._viewer2d.toggle_liveplot_visibility(show=True)
+            self.viewer2d.toggle_liveplot_visibility(show=True)
             if self.render_update_rate is not None:
-                self._viewer2d.set_update_rate(self.render_update_rate)
-            self._viewer2d.init_live_plot(self.enc, self.simulator.ship_list, fignum=self.env_id)
-            self._viewer2d.update_live_plot(
+                self.viewer2d.set_update_rate(self.render_update_rate)
+            self.viewer2d.init_live_plot(self.enc, self.simulator.ship_list, fignum=self.env_id)
+            self.viewer2d.update_live_plot(
                 self.simulator.t,
                 self.enc,
                 self.simulator.ship_list,
@@ -413,7 +424,7 @@ class COLAVEnvironment(gym.Env):
             self._init_render()
 
         if self.render_mode == "rgb_array":
-            self._viewer2d.update_live_plot(
+            self.viewer2d.update_live_plot(
                 self.simulator.t,
                 self.enc,
                 self.simulator.ship_list,
@@ -421,20 +432,20 @@ class COLAVEnvironment(gym.Env):
                 self.simulator.disturbance.get() if self.simulator.disturbance is not None else None,
                 remote_actor=True,
             )
-            self.current_frame = self._viewer2d.get_live_plot_image()
+            self.current_frame = self.viewer2d.get_live_plot_image()
             img = self.current_frame
         return img
 
     @property
     def liveplot_image(self) -> np.ndarray:
         """The current live plot image."""
-        if self._viewer2d is not None and self.render_mode == "rgb_array":
-            return self._viewer2d.get_live_plot_image()
+        if self.viewer2d is not None and self.render_mode == "rgb_array":
+            return self.viewer2d.get_live_plot_image()
 
     @property
     def liveplot_zoom_width(self) -> float:
         """The width of the live plot."""
-        return self._viewer2d.zoom_window_width
+        return self.viewer2d.zoom_window_width
 
     @property
     def enc(self) -> senc.ENC:

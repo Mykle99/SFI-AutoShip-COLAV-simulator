@@ -543,9 +543,10 @@ class Ship(IShip):
             csog_state (np.ndarray): Initial COG-SOG state = [x, y, U, chi] of the ship.
             t_start (float, optional): Time when the ship appears in the simulation. Defaults to 0.0.
         """
+        assert csog_state.size == 4, "Initial state must be a 4D vector!"
         self._state = np.array([csog_state[0], csog_state[1], csog_state[3], csog_state[2], 0.0, 0.0])
-        if csog_state[2] > self.max_speed or csog_state[2] < self.min_speed:
-            raise ValueError(f"Initial speed, U: {csog_state[2]}, is outside the ship's speed limits! See ship info (U_min: {self.min_speed} and U_max: {self.max_speed}) in models.py")
+        #if csog_state[2] > self.max_speed or csog_state[2] < self.min_speed:
+        #    raise ValueError(f"Initial speed, U: {csog_state[2]}, is outside the ship's speed limits! See ship info (U_min: {self.min_speed} and U_max: {self.max_speed}) in models.py")
         self.t_start = t_start if t_start is not None else 0.0
 
     def set_goal_state(self, csog_state: np.ndarray) -> None:
@@ -554,9 +555,10 @@ class Ship(IShip):
         Args:
             csog_state (np.ndarray): Initial COG-SOG state = [x, y, U, chi] of the ship.
         """
+        assert csog_state.size == 4, "Goal state must be a 4D vector!"
         self._goal_state = np.array([csog_state[0], csog_state[1], csog_state[3], csog_state[2], 0.0, 0.0])
-        if csog_state[2] > self.max_speed or csog_state[2] < self.min_speed:
-            raise ValueError(f"Goal speed, U: {csog_state[2]}, is outside the ship's speed limits! See ship info (U_min: {self.min_speed} and U_max: {self.max_speed}) in models.py")
+        #if csog_state[2] > self.max_speed or csog_state[2] < self.min_speed:
+        #    raise ValueError(f"Goal speed, U: {csog_state[2]}, is outside the ship's speed limits! See ship info (U_min: {self.min_speed} and U_max: {self.max_speed}) in models.py")
 
     def set_nominal_plan(self, waypoints: np.ndarray, speed_plan: np.ndarray):
         """Reassigns waypoints and speed_plan to the ship, to change its objective.
@@ -565,7 +567,7 @@ class Ship(IShip):
             waypoints (np.ndarray): New set of waypoints.
             speed_plan (np.ndarray): New corresponding set of speed references.
         """
-        assert speed_plan.size == waypoints.shape[1]
+        assert speed_plan.size == waypoints.shape[1], "Waypoints and speed plan must have the same number of columns!"
         n_px, n_wps = waypoints.shape
         if n_px != 2:
             raise ValueError("Waypoints do not contain planar coordinates along each column!")
@@ -573,9 +575,9 @@ class Ship(IShip):
         if n_wps < 2:
             raise ValueError("Insufficient number of waypoints (< 2)!")
         
-        for speed in speed_plan:
-            if speed > self.max_speed or speed < self.min_speed:
-                raise ValueError(f"Planned speed, U: {speed}, is outside the ship's speed limits! See ship info (U_min: {self.min_speed} and U_max: {self.max_speed}) in models.py")
+        #for speed in speed_plan:
+        #    if speed > self.max_speed or speed < self.min_speed:
+        #        raise ValueError(f"Planned speed, U: {speed}, is outside the ship's speed limits! See ship info (U_min: {self.min_speed} and U_max: {self.max_speed}) in models.py")
             
         self._waypoints = waypoints
         self._speed_plan = speed_plan
@@ -848,7 +850,10 @@ class Ship(IShip):
         if self._state.size == 4:
             return self._state[3]
         else:  # self._state.size == 6
-            return mf.wrap_angle_to_pmpi(self._state[2] + np.arctan2(self._state[4], self._state[3]))
+            if self._state[3] < 0.01:
+                return self._state[2]
+            crab = np.arctan2(self._state[4], self._state[3])
+            return mf.wrap_angle_to_pmpi(self._state[2] + crab)
 
     @property
     def waypoints(self) -> np.ndarray:

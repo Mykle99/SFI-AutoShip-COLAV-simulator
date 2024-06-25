@@ -414,24 +414,40 @@ def convert_simulation_data_to_vessel_data(sim_data: pd.DataFrame, ship_info: di
         vessel.forward_heading_estimate = np.zeros(n_msgs) * np.nan
         vessel.backward_heading_estimate = np.zeros(n_msgs) * np.nan
         for k in range(vessel.first_valid_idx, vessel.last_valid_idx):
-            vessel.forward_heading_estimate[k] = np.arctan2(
-                vessel.xy[0, k + 1] - vessel.xy[0, k], vessel.xy[1, k + 1] - vessel.xy[1, k]
-            )
-        vessel.forward_heading_estimate[vessel.last_valid_idx] = vessel.forward_heading_estimate[
-            vessel.last_valid_idx - 1
-        ]
+            try:
+                vessel.forward_heading_estimate[k] = np.arctan2(
+                    vessel.xy[0, k + 1] - vessel.xy[0, k], vessel.xy[1, k + 1] - vessel.xy[1, k]
+                )
+            except:
+                continue
+
+        try:
+            vessel.forward_heading_estimate[vessel.last_valid_idx] = vessel.forward_heading_estimate[
+                vessel.last_valid_idx - 1
+            ]
+        except:
+            pass
 
         for k in range(vessel.first_valid_idx + 1, vessel.last_valid_idx):
-            vessel.backward_heading_estimate[k] = np.arctan2(
-                vessel.xy[0, k] - vessel.xy[0, k - 1], vessel.xy[1, k] - vessel.xy[1, k - 1]
-            )
-        vessel.backward_heading_estimate[vessel.first_valid_idx] = vessel.forward_heading_estimate[
-            vessel.first_valid_idx
-        ]
+            try:
+                vessel.backward_heading_estimate[k] = np.arctan2(
+                    vessel.xy[0, k] - vessel.xy[0, k - 1], vessel.xy[1, k] - vessel.xy[1, k - 1]
+                )
+            except:
+                continue
+        try:
+            vessel.backward_heading_estimate[vessel.first_valid_idx] = vessel.forward_heading_estimate[
+                vessel.first_valid_idx
+            ]
+        except:
+            pass
 
-        vessel.travel_dist = vd.compute_total_dist_travelled(
-            vessel.xy[:, vessel.first_valid_idx : vessel.last_valid_idx + 1]
-        )
+        try:
+            vessel.travel_dist = vd.compute_total_dist_travelled(
+                vessel.xy[:, vessel.first_valid_idx : vessel.last_valid_idx + 1]
+            )
+        except:
+            pass
 
         # print(f"Vessel {identifier} travelled a distance of {vessel.travel_dist} m")
         # print(f"Vessel status: {vessel.status}")
@@ -526,7 +542,10 @@ def extract_trajectory_data_from_dataframe(ship_df: pd.DataFrame) -> Tuple[np.nd
     timestamps = []
     datetimes_utc = []
     for k, ship_df_k in enumerate(ship_df):
-        X[:, k] = ship_df_k["state"]
+        try:
+            X[:, k] = ship_df_k["state"]
+        except:
+            continue
         timestamps.append(float(ship_df_k["timestamp"]))
         datetime_utc = datetime.strptime(ship_df_k["date_time_utc"], "%d.%m.%Y %H:%M:%S")
         datetimes_utc.append(datetime_utc)

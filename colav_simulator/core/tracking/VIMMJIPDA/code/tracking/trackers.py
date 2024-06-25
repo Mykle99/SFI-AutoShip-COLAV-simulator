@@ -88,7 +88,9 @@ class VIMMJIPDATracker(Tracker):
         cluster.eta = np.zeros((n_t,m_k+1))
         cluster.mu = np.zeros((n_t,M,m_k+1))
         cluster.w = np.zeros((n_t,m_k+1))
+        
         eps = 1e-10
+        max_exp = 25
 
         for t, track in enumerate(cluster.tracks):
 
@@ -97,13 +99,13 @@ class VIMMJIPDATracker(Tracker):
 
             mode_probabilities = track.mode_probabilities
 
-            existence_prob_miss = ((1-P_D*track.visibility_probability)*track.existence_probability)/(1-P_D*track.visibility_probability*track.existence_probability)
-            visibility_prob_miss = (1-P_D)*track.visibility_probability/(1-P_D*track.visibility_probability)
+            existence_prob_miss = ((1-P_D*track.visibility_probability)*track.existence_probability)/(1-P_D*track.visibility_probability*track.existence_probability + eps)
+            visibility_prob_miss = (1-P_D)*track.visibility_probability/(1-P_D*track.visibility_probability + eps)
 
             cluster.r[t] = np.hstack((np.ones(m_k),existence_prob_miss)).reshape(m_k+1)
             cluster.eta[t] = np.hstack((np.ones(m_k),visibility_prob_miss)).reshape(m_k+1)
-            cluster.mu[t] = np.concatenate((np.exp(np.log(mode_probabilities.reshape(M,1) + eps)+np.log(measurement_likelihoods.reshape(M,m_k) + eps) - \
-                np.log(measurement_likelihoods_combined.reshape(1,m_k) + eps)),(mode_probabilities.reshape(M,1).reshape(M,1))),axis=1).reshape((M,m_k+1))
+            cluster.mu[t] = np.concatenate((np.exp(np.clip(np.log(mode_probabilities.reshape(M,1) + eps)+np.log(measurement_likelihoods.reshape(M,m_k) + eps) - \
+                np.log(measurement_likelihoods_combined.reshape(1,m_k) + eps), a_min = None, a_max = max_exp)),(mode_probabilities.reshape(M,1).reshape(M,1))),axis=1).reshape((M,m_k+1))
             cluster.w[t] = np.hstack((P_D*track.visibility_probability*track.existence_probability*measurement_likelihoods_combined,\
                 1-P_D*track.visibility_probability*track.existence_probability)).reshape((m_k+1))
         return cluster
@@ -119,7 +121,9 @@ class VIMMJIPDATracker(Tracker):
         n_t = cluster.n_tracks
 
         marginal_association_probabilities = self.data_associator.get_marginal_association_probabilities(cluster)
+        
         eps = 1e-10
+        max_exp = 25
 
         for t, track in enumerate(cluster.tracks):
             eta_t_j = cluster.eta[t]
@@ -132,21 +136,21 @@ class VIMMJIPDATracker(Tracker):
             if self.visibility_off:
                 track.visibility_probability = 1
             else:
-                track.visibility_probability = np.exp(
-                    np.log(np.sum(np.exp(np.log(eta_t_j.reshape(m_k+1) + eps) + \
+                track.visibility_probability = np.exp(np.clip(
+                    np.log(np.sum(np.exp(np.clip(np.log(eta_t_j.reshape(m_k+1) + eps) + \
                     np.ma.log(p_t_j.reshape(m_k+1) + eps) + \
-                    np.log(r_t_j.reshape(m_k+1) + eps))) + eps)- \
-                    np.log(track.existence_probability + eps)
+                    np.log(r_t_j.reshape(m_k+1) + eps), a_min = None,  a_max = max_exp))) + eps)- \
+                    np.log(track.existence_probability + eps), a_min = None, a_max = max_exp)
                 )
 
-            track.mode_probabilities = np.exp(
-                np.log(np.sum(np.exp(np.log(mu_t_s_j + eps) + np.ma.log(p_t_j.reshape(1,m_k+1) + eps) + \
-                np.log(r_t_j.reshape(1,m_k+1) + eps)),axis=1) + eps)-(np.log(track.existence_probability + eps))
+            track.mode_probabilities = np.exp(np.clip(
+                np.log(np.sum(np.exp(np.clip(np.log(mu_t_s_j + eps) + np.ma.log(p_t_j.reshape(1,m_k+1) + eps) + \
+                np.log(r_t_j.reshape(1,m_k+1) + eps), a_min = None, a_max = max_exp)),axis=1) + eps)-(np.log(track.existence_probability + eps)), a_min = None, a_max = max_exp)
             ).reshape(M)
 
 
-            betas = np.exp(np.log(mu_t_s_j + eps) + np.ma.log(p_t_j.reshape(1,m_k+1)) + np.log(r_t_j.reshape(1,m_k+1) + eps)- \
-                (np.log(track.mode_probabilities.reshape(M,1) + eps) + np.log(track.existence_probability + eps))).filled(0).reshape(M,m_k+1)
+            betas = np.exp(np.clip(np.log(mu_t_s_j + eps) + np.ma.log(p_t_j.reshape(1,m_k+1)) + np.log(r_t_j.reshape(1,m_k+1) + eps)- \
+                (np.log(track.mode_probabilities.reshape(M,1) + eps) + np.log(track.existence_probability + eps)), a_min = None, a_max = max_exp)).filled(0).reshape(M,m_k+1)
 
 
             self.filter.update(

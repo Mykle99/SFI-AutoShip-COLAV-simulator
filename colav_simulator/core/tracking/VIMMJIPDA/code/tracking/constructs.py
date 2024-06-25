@@ -4,6 +4,7 @@ import numpy as np
 import collections
 import anytree
 import copy
+import sys
 
 
 class Cluster(object):
@@ -55,11 +56,21 @@ class Cluster(object):
         """
 
         measurement_likelihoods = []
+        
+        max_exp = 25
+        eps = 1e-10
+
         for t, estimate in enumerate(self.tracks):
             measurement_likelihoods_t = np.zeros(estimate.states.shape + (self.n_measurements,))
             innovation = self.innovation[t]
-            S_inv = self.S_inv[t]
-            determinant = np.linalg.det(self.S[t])
+           
+            S_inv = self.S_inv[t] + eps * np.eye(self.S[t].shape[0])
+            cond = np.linalg.cond(self.S[t])
+            if cond < 1/sys.float_info.epsilon:
+                determinant = np.linalg.det(self.S[t])
+            else:
+                determinant = -1
+
             for j, measurement in enumerate(self.measurements):
 
                 a = np.matmul(innovation[...,j,None,:], S_inv[...,:,:])[...]
@@ -67,10 +78,9 @@ class Cluster(object):
                 b = innovation[...,j,:,None]
                 exponent = np.matmul(a,b)[...,0,0]
                 if determinant >= 0:
-                    measurement_likelihoods_t[...,j] = np.divide(np.exp(-0.5*exponent),(2*np.pi*np.sqrt(determinant)))
+                    measurement_likelihoods_t[...,j] = np.divide(np.exp(np.clip(-0.5*exponent, a_min = None, a_max = max_exp)),(2*np.pi*np.sqrt(determinant)))
                 else:
-                    measurement_likelihoods_t[...,j] = 0
-
+                    measurement_likelihoods_t[...,j] = 1e-100
 
             # to avoid division by zero in the case of large validation gates
             measurement_likelihoods_t[measurement_likelihoods_t < 1e-100] = 1e-100

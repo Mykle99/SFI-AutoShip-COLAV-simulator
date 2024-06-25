@@ -66,8 +66,10 @@ class Cluster(object):
 
                 b = innovation[...,j,:,None]
                 exponent = np.matmul(a,b)[...,0,0]
-                measurement_likelihoods_t[...,j] = np.divide(np.exp(-0.5*exponent),(2*np.pi*np.sqrt(determinant)))
-
+                if determinant >= 0:
+                    measurement_likelihoods_t[...,j] = np.divide(np.exp(-0.5*exponent),(2*np.pi*np.sqrt(determinant)))
+                else:
+                    measurement_likelihoods_t[...,j] = 0
 
 
             # to avoid division by zero in the case of large validation gates

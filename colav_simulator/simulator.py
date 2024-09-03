@@ -162,9 +162,7 @@ class Simulator:
             self, 
             scenario_data_list: list, 
             colav_systems: Optional[list] = None,
-            terminate_on_collision_or_grounding: bool = True,
-            batch_number: Optional[int] = None, 
-            n_batches: Optional[int] = None,
+            terminate_on_collision_or_grounding: bool = True
     ) -> list:
         """Runs through all specified scenarios with their number of episodes. If none are specified, the scenarios are generated from the config file and run through.
 
@@ -174,8 +172,6 @@ class Simulator:
             - scenario_data_list (list): Premade list of created/configured scenarios. Each entry contains a list of ship objects, scenario configuration objects and relevant ENC objects.
             - colav_systems (Optional[list]): List of tuples (ship ID, COLAV system) to use for the selected ships involved in the scenario, overrides the existing ones. Defaults to None.
             - terminate_on_collision_or_grounding (bool): Whether to terminate the simulation if a collision or grounding occurs.
-            - batch_number (Optional[int]): Batch number for multi-processing. Defaults to None.
-            - n_batches (Optional[int]): Number of batches for multi-processing. Defaults to None.
 
         Returns:
             list: List of dictionaries containing the following simulation data for each scenario:
@@ -197,15 +193,8 @@ class Simulator:
             if self._config.verbose:
                 print(f"\rSimulator: Running scenario nr {i + 1}...")
 
-            if batch_number is not None and n_batches is not None:
-                episodes_per_batch = scenario_episode_list[0]["config"].episode_generation.n_episodes
-                start_ep = batch_number * episodes_per_batch
-            else:
-                start_ep = 0
-
             episode_simdata_list = []
-            for local_ep, episode_data in enumerate(scenario_episode_list):
-                actual_ep = start_ep + local_ep
+            for ep, episode_data in enumerate(scenario_episode_list):
                 episode_simdata = {}
                 ship_list = episode_data["ship_list"]
                 episode_disturbance = episode_data["disturbance"]
@@ -214,20 +203,20 @@ class Simulator:
 
                 self.initialize_scenario_episode(ship_list, episode_config, scenario_enc, episode_disturbance, colav_systems, seed=seed_val)
                 
-                np.random.seed(actual_ep) # This sets the seed for measurement noise so that trackers can be compared
-                #self.ownship._colav._psbmpc_cpe.set_seed(actual_ep) # This sets the seed for the ownship's CPE's PRNG
+                np.random.seed(ep) # This sets the seed for measurement noise so that trackers can be compared
+                #self.ownship._colav._psbmpc_cpe.set_seed(ep) # This sets the seed for the ownship's CPE's PRNG
                 if colav_systems is not None:
                     for ship_id, _ in colav_systems:
                         for _, ship_obj in enumerate(self.ship_list):
                             if ship_obj.id == ship_id and type(ship_obj._colav) == "PSBMPC":
-                                ship_obj._colav._psbmpc_cpe.set_seed(seed_val) # This sets the seed for the OS's and TSs' ((with PSBMPC colav) CPE's PRNG
+                                ship_obj._colav._psbmpc_cpe.set_seed(ep) # This sets the seed for the OS's and TSs' ((with PSBMPC colav) CPE's PRNG
 
                 if self._config.verbose:
-                    print(f"\rSimulator: Running scenario episode nr {actual_ep + 1}: {scenario_episode_file}...")
+                    print(f"\rSimulator: Running scenario episode nr {ep + 1}: {scenario_episode_file}...")
                 sim_data, ship_info, sim_times = self.run_scenario_episode(terminate_on_collision_or_grounding)
                 if self._config.verbose:
                     print(
-                        f"\rSimulator: Finished running through scenario episode nr {actual_ep + 1}: {scenario_episode_file}."
+                        f"\rSimulator: Finished running through scenario episode nr {ep + 1}: {scenario_episode_file}."
                     )
 
                 # self.visualizer.visualize_results(

@@ -12,12 +12,35 @@ from typing import Optional, Tuple
 
 import colav_simulator.common.map_functions as mapf
 import colav_simulator.common.miscellaneous_helper_methods as mhm
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import seacharts.display.colors as colors
 import seacharts.enc as senc
 from matplotlib.collections import PolyCollection
 from shapely.geometry import MultiPolygon, Polygon
+
+
+def plot_image(image: np.ndarray, ax: Optional[plt.Axes] = None, title: Optional[str] = None) -> plt.Axes:
+    """Plots an image.
+
+    Args:
+        image (np.ndarray): Image to plot.
+        ax (Optional[plt.Axes]): Matplotlib axes handle.
+        title (Optional[str]): Title of the plot.
+
+    Returns:
+        plt.Axes: Matplotlib axes handle.
+    """
+    matplotlib.use("TkAgg")
+    if ax is None:
+        _, ax = plt.subplots()
+    ax.imshow(image)
+    ax.axis("off")
+    if title is not None:
+        ax.set_title(title)
+    plt.show(block=False)
+    return ax
 
 
 def plot_trajectory(
@@ -123,8 +146,8 @@ def plot_shapely_multipolygon(
 
     poly_verts = [np.array(poly.exterior.coords) for poly in mp.geoms]
     collection = PolyCollection(poly_verts, edgecolor=color, facecolor=color, alpha=alpha, zorder=zorder)
-    handle = ax.add_collection(collection)
-    return ax, handle
+    collection = ax.add_collection(collection)
+    return ax, collection
 
 
 def plot_background(

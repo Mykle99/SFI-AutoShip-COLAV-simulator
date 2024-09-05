@@ -95,13 +95,19 @@ visualizer:
     n_snapshots:
       required: False
       type: integer
-    figsize:
+    matplotlib_backend:
+      required: True
+      type: string
+    fig_size:
       required: True
       type: list
       minlength: 2
       maxlength: 2
       schema:
         type: integer
+    fig_dpi:
+      required: True
+      type: integer
     margins:
       required: True
       type: list

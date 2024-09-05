@@ -79,15 +79,15 @@ class SHPIDParams:
 @dataclass
 class FLSCParams:
     "Parameters for the feedback linearizing surge-course controller."
-    K_p_u: float = 2.0
-    K_i_u: float = 0.1
-    K_p_chi: float = 2.5
-    K_d_chi: float = 1.75
-    K_i_chi: float = 0.003
-    max_speed_error_int: float = 2.0
-    speed_error_int_threshold: float = 1.0
-    max_chi_error_int: float = 50.0 * np.pi / 180.0
-    chi_error_int_threshold: float = 15.0 * np.pi / 180.0
+    K_p_u: float = 3.0
+    K_i_u: float = 0.3
+    K_p_chi: float = 2.2
+    K_d_chi: float = 4.0
+    K_i_chi: float = 0.1
+    max_speed_error_int: float = 4.0
+    speed_error_int_threshold: float = 0.5
+    max_chi_error_int: float = 90.0 * np.pi / 180.0
+    chi_error_int_threshold: float = 20.0 * np.pi / 180.0
 
     def to_dict(self):
         output = asdict(self)
@@ -163,8 +163,18 @@ class IController(ABC):
     def compute_inputs(self, refs: np.ndarray, xs: np.ndarray, dt: float) -> np.ndarray:
         """Computes inputs using the specific controller strategy.
 
-        References should be of dimension 9 to be able to include pose (typically in NED),
-        pose derivative (NED or BODY), and pose double derivative (NED or BODY).
+        References should be of dimension 9 x 1 consisting of pose, velocity and acceleration refs. E.g.
+        for LOS-guidance with a PID controller (FLSH) for surge and course control, the refs are typically
+        [0, 0, chi_ref, U_ref, 0, 0, 0, 0, 0]^T.
+
+        Args:
+            refs (np.ndarray): Desired/references = [x, y, psi, u, v, r, ax, ay, rdot]
+            xs (np.ndarray): State typically on the form [x, y, psi, u, v, r]^T, or [x, y, chi, U, 0, 0]^T for a CSOG kinematic model.
+            dt (float): Time step
+
+        Returns:
+            np.ndarray: 3 x 1 inputs u.
+
         """
 
     @abstractmethod
@@ -205,7 +215,7 @@ class PassThroughCS(IController):
 
         Args:
             refs (np.ndarray): Desired/references = [x, y, psi, u, v, r, ax, ay, rdot]
-            xs (np.ndarray): State xs
+            xs (np.ndarray): State typically on the form [x, y, psi, u, v, r]^T, or [x, y, chi, U, 0, 0]^T for a CSOG kinematic model.
             dt (float): Time step
 
         Returns:
@@ -244,12 +254,12 @@ class PassThroughInputs(IController):
         """Takes out relevant parts of references as inputs directly
 
         Args:
-            refs (np.ndarray): Force inputs = [X, Y, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] or [X, Y, -Y * l_r, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] depending on the model.
-            xs (np.ndarray): State xs
+            refs (np.ndarray): Force inputs = [X, Y, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]^T or [X, Y, -Y * l_r, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]^T depending on the model.
+            xs (np.ndarray): State typically on the form [x, y, psi, u, v, r]^T, or [x, y, chi, U, 0, 0]^T for a CSOG kinematic model.
             dt (float): Time step
 
         Returns:
-            np.ndarray: 3 x 1 inputs u = [X, Y, N]^T
+            np.ndarray: 3 x 1 inputs u
         """
 
         if len(refs) != 9:
@@ -423,14 +433,14 @@ class FLSC(IController):
         if abs(speed_error) <= self._params.speed_error_int_threshold:
             self._speed_error_int += speed_error * dt
 
-        if abs(speed_error) < 0.01:
-            self._speed_error_int = 0.0
+        # if abs(speed_error) < 0.01:
+        #     self._speed_error_int = 0.0
 
         if abs(chi_error) <= self._params.chi_error_int_threshold:
             self._chi_error_int = mf.unwrap_angle(self._chi_error_int, chi_error * dt)
 
-        if abs(chi_error) < 0.1 * np.pi / 180.0:
-            self._chi_error_int = 0.0
+        # if abs(chi_error) < 0.1 * np.pi / 180.0:
+        #     self._chi_error_int = 0.0
 
         self._speed_error_int = mf.sat(
             self._speed_error_int, -self._params.max_speed_error_int, self._params.max_speed_error_int
@@ -495,7 +505,7 @@ class FLSC(IController):
             ) @ nu
             l_r = abs(self._model_params.r_t[0])
 
-        speed_error = u_d - nu[0]
+        speed_error = u_d - speed
         chi_error: float = mf.wrap_angle_diff_to_pmpi(chi_d_unwrapped, chi_unwrapped)
         chi_error_unwrapped = mf.unwrap_angle(chi_error_prev, chi_error)
         self.update_integrators(speed_error, chi_error_unwrapped, dt)

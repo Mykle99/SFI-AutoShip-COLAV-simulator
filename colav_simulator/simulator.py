@@ -8,9 +8,9 @@
     Author: Trym Tengesdal, Magne Aune, Joachim Miller
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import colav_simulator.common.config_parsing as cp
 import colav_simulator.common.map_functions as mapf
@@ -33,12 +33,12 @@ np.set_printoptions(suppress=True, formatter={"float_kind": "{:.4f}".format})
 class Config:
     """Simulation related configuration/parameter class."""
 
-    save_scenario_results: bool
-    verbose: bool
+    save_scenario_results: bool = False
+    verbose: bool = True
     tracking_from_ownship_only: (
         bool  # Whether to track obstacles from ownship only (True) or all ships track each other (False)
-    )
-    visualizer: viz.Config
+    ) = True
+    visualizer: viz.Config = field(default_factory=viz.Config())
 
     @classmethod
     def from_dict(cls, config_dict: dict):
@@ -69,21 +69,21 @@ class Simulator:
         Additional key-value arguments can be passed to override the settings in the config file:
 
         Args:
-            config (Optional[Config]): Configuration object. Defaults to None.
+            config (Optional[Config]): Configuration object.
             config_file (Optional[Path]): Path to configuration file. Defaults to dp.simulator_config.
             kwargs: key-value dictionary of settings to override. This includes:
                 scenario_files (List[str]): List of scenario files to run.
 
         """
         if config is not None:
-            self._config = config
+            self.config: Config = config
         elif config_file is not None:
-            self._config = cp.extract(Config, config_file, dp.simulator_schema, **kwargs)
+            self.config = cp.extract(Config, config_file, dp.simulator_schema, **kwargs)
         else:
             raise ValueError("No configuration file or configuration object provided.")
 
-        self.visualizer: viz.Visualizer = viz.Visualizer(self._config.visualizer)
-        self.config: Config = self._config
+        self.visualizer: viz.Visualizer = viz.Visualizer(self.config.visualizer)
+        self.config = self.config
 
         self.ownship: Ship = None
         self.ship_list: List[Ship] = []
@@ -91,6 +91,7 @@ class Simulator:
         self.enc: senc.ENC = None
         self.sconfig: sc.ScenarioConfig = None
         self.relevant_grounding_hazards: list = []
+        self.relevant_grounding_hazards_as_union = None
         self.recent_sensor_measurements: list = []
 
         self.t = 0.0
@@ -114,6 +115,7 @@ class Simulator:
         enc: senc.ENC,
         disturbance: Optional[stochasticity.Disturbance] = None,
         colav_systems: Optional[list] = None,
+        trackers: Optional[list] = None,
         seed: int | None = None,
     ) -> None:
         """Initializes the simulation through setting relevant internal state objects.
@@ -124,13 +126,18 @@ class Simulator:
             the scenario start (t0).
             - sconfig (ScenarioConfig): Scenario episode configuration object.
             - enc (senc.ENC): ENC object relevant for the scenario.
-            - disturbance (Optional[stochasticity.Disturbance]): Disturbance object relevant for the scenario. Defaults to None.
-            - colav_systems (Optional[list]): List of tuples (ship ID, COLAV system) to use for the selected ships involved in the scenario, overrides the existing ones. Defaults to None.
-            - seed (int | None): Seed for the random number generator. Defaults to None.
+            - disturbance (Optional[stochasticity.Disturbance]): Disturbance object relevant for the scenario.
+            - colav_systems (Optional[list]): List of tuples (ship ID, COLAV system) to use for the selected ships involved in the scenario, overrides the existing ones.
+            - trackers (Optional[list]): List of tuples (ship ID, tracker system) to use for the selected ships involved in the scenario, overrides the existing ones.
+            - seed (int | None): Seed for the random number generator.
         """
+        self.ship_list = None
         self.ship_list = ship_list
+        self.sconfig = None
         self.sconfig = sconfig
+        self.enc = None
         self.enc = enc
+        self.disturbance = None
         self.disturbance = disturbance
         self.ownship = ship_list[0]
         if colav_systems is not None:
@@ -139,8 +146,17 @@ class Simulator:
                     if ship_obj.id == ship_id:
                         ship_obj.set_colav_system(colav_system)
 
+        if trackers is not None:
+            for ship_id, tracker in trackers:
+                for _, ship_obj in enumerate(self.ship_list):
+                    if ship_obj.id == ship_id:
+                        ship_obj.set_tracker(tracker)
+
         ownship_min_depth = mapf.find_minimum_depth(self.ownship.draft, self.enc)
         self.relevant_grounding_hazards = mapf.extract_relevant_grounding_hazards(ownship_min_depth, self.enc)
+        self.relevant_grounding_hazards_as_union = mapf.extract_relevant_grounding_hazards_as_union(
+            ownship_min_depth, self.enc
+        )
 
         for ship_obj in self.ship_list:
             ship_obj.reset(seed=seed)
@@ -153,36 +169,35 @@ class Simulator:
         self.t_start = sconfig.t_start
         self.t_end = sconfig.t_end
         self.dt = sconfig.dt_sim
-        self.recent_sensor_measurements: list = [None] * len(self.ship_list)
-        # print(
-        #     f"Initialized scenario ep={sconfig.name} with {len(self.ship_list)} ships and Disturbance={disturbance is not None}."
-        # )
+        self.recent_sensor_measurements = [None] * len(self.ship_list)
 
     def run(
-            self, 
-            scenario_data_list: list, 
-            colav_systems: Optional[list] = None,
-            terminate_on_collision_or_grounding: bool = True
-    ) -> list:
+        self,
+        scenario_data_list: list,
+        colav_systems: Optional[list] = None,
+        trackers: Optional[list] = None,
+        terminate_on_collision_or_grounding: bool = True,
+    ) -> List[Dict[str, Any]]:
         """Runs through all specified scenarios with their number of episodes. If none are specified, the scenarios are generated from the config file and run through.
 
         Seeds for the random number generator are set and incremented for each scenario episode.
 
         Args:
             - scenario_data_list (list): Premade list of created/configured scenarios. Each entry contains a list of ship objects, scenario configuration objects and relevant ENC objects.
-            - colav_systems (Optional[list]): List of tuples (ship ID, COLAV system) to use for the selected ships involved in the scenario, overrides the existing ones. Defaults to None.
+            - colav_systems (Optional[list]): List of tuples (ship ID, COLAV system) to use for the selected ships involved in the scenario, overrides the existing ones.
+            - trackers (Optional[list]): List of tuples (ship ID, tracker system) to use for the selected ships involved in the scenario, overrides the existing ones.
             - terminate_on_collision_or_grounding (bool): Whether to terminate the simulation if a collision or grounding occurs.
 
         Returns:
-            list: List of dictionaries containing the following simulation data for each scenario:
-            - episode_simdata_list (list): List of dictionaries containing the following simulation data for each scenario episode:
-                - vessel_data (list): List of data containers containing the vessel simulation data for each ship (used for evaluation).
-                - sim_data (pd.DataFrame): Dataframe containing the simulated data for each ship.
-                - ship_info (pd.DataFrame): Dataframe containing the ship info for each ship.
+            List[Dict[str, Any]]: List of dictionaries containing the following simulation data for each scenario:
+            - episode_simdata_list (List[Dict[str, Any]]): List of dictionaries containing the following simulation data for each scenario episode:
+                - vessel_data (List[VesselData]): List of data containers containing the vessel simulation data for each ship (used for evaluation).
+                - sim_data (List[Dict[str, Any]]): List of dictionaries containing the simulated data for each ship.
+                - ship_info (Dict[str, Any]): Dataframe containing the ship info for each ship.
             - enc (senc.Enc): ENC object used in all the scenario episodes.
         """
 
-        if self._config.verbose:
+        if self.config.verbose:
             print("\rSimulator: Started running through scenarios...")
 
         seed_val = 0
@@ -190,7 +205,7 @@ class Simulator:
         scenario_simdata_list = []
         for i, (scenario_episode_list, scenario_enc) in enumerate(scenario_data_list):
             scenario_simdata = {}
-            if self._config.verbose:
+            if self.config.verbose:
                 print(f"\rSimulator: Running scenario nr {i + 1}...")
 
             episode_simdata_list = []
@@ -201,20 +216,27 @@ class Simulator:
                 episode_config = episode_data["config"]
                 scenario_episode_file = episode_config.filename
 
-                self.initialize_scenario_episode(ship_list, episode_config, scenario_enc, episode_disturbance, colav_systems, seed=seed_val)
+                self.initialize_scenario_episode(
+                    ship_list=ship_list,
+                    sconfig=episode_config,
+                    enc=scenario_enc,
+                    disturbance=episode_disturbance,
+                    colav_systems=colav_systems,
+                    trackers=trackers,
+                    seed=seed_val
+                )
                 
-                np.random.seed(ep) # This sets the seed for measurement noise so that trackers can be compared
-                #self.ownship._colav._psbmpc_cpe.set_seed(ep) # This sets the seed for the ownship's CPE's PRNG
+                # This sets the seed for the OS's and TSs' (using the PSBMPC) CPE's PRNG
                 if colav_systems is not None:
                     for ship_id, _ in colav_systems:
                         for _, ship_obj in enumerate(self.ship_list):
                             if ship_obj.id == ship_id and type(ship_obj._colav) == "PSBMPC":
-                                ship_obj._colav._psbmpc_cpe.set_seed(ep) # This sets the seed for the OS's and TSs' ((with PSBMPC colav) CPE's PRNG
+                                ship_obj._colav._psbmpc_cpe.set_seed(seed_val)
 
-                if self._config.verbose:
+                if self.config.verbose:
                     print(f"\rSimulator: Running scenario episode nr {ep + 1}: {scenario_episode_file}...")
                 sim_data, ship_info, sim_times = self.run_scenario_episode(terminate_on_collision_or_grounding)
-                if self._config.verbose:
+                if self.config.verbose:
                     print(
                         f"\rSimulator: Finished running through scenario episode nr {ep + 1}: {scenario_episode_file}."
                     )
@@ -228,6 +250,7 @@ class Simulator:
                 # )
 
                 # self.visualizer.save_live_plot_animation(dp.animation_output / (episode_config.name + ".gif"))
+                # self.visualizer.close_live_plot()
 
                 vessel_data = mhm.convert_simulation_data_to_vessel_data(sim_data, ship_info, episode_config.utm_zone)
 
@@ -235,25 +258,28 @@ class Simulator:
                 episode_simdata["sim_data"] = sim_data
                 episode_simdata["ship_info"] = ship_info
                 episode_simdata_list.append(episode_simdata)
-
                 seed_val += 1
 
-            if self._config.verbose:
+            if self.config.verbose:
                 print(f"\rSimulator: Finished running through episodes of scenario nr {i + 1}.")
 
             scenario_simdata["episode_simdata_list"] = episode_simdata_list
             scenario_simdata["enc"] = scenario_enc
             scenario_simdata_list.append(scenario_simdata)
 
-        if self._config.verbose:
+        if self.config.verbose:
             print("\rSimulator: Finished running through scenarios.")
         return scenario_simdata_list
 
-    def is_terminated(self, verbose: bool = False, terminate_on_collision_or_grounding: bool = True) -> bool:
+    def is_terminated(
+        self, verbose: bool = False, terminate_on_collision_or_grounding: bool = True, prefix_string: str = ""
+    ) -> bool:
         """Check whether the current own-ship state is a terminal state.
 
         Args:
             verbose (bool): Whether to print out the reason for the termination.
+            terminate_on_collision_or_grounding (bool): Whether to terminate the simulation if a collision or grounding occurs.
+            prefix_string (str): Prefix string to add to the printout.
 
         Returns:
             bool: Whether the current own-ship state is a terminal state
@@ -262,39 +288,40 @@ class Simulator:
         collided = self.determine_ship_collision(ship_idx=0) and terminate_on_collision_or_grounding
         grounded = self.determine_ship_grounding(ship_idx=0) and terminate_on_collision_or_grounding
         if verbose and collided:
-            print(f"Collision at t = {self.t}!")
+            print(f"{prefix_string}Collision at t = {self.t}!")
         if verbose and grounded:
-            print(f"Grounding at t = {self.t}!")
+            print(f"{prefix_string}Grounding at t = {self.t}!")
         if verbose and goal_reached:
-            print(f"Goal reached at t = {self.t}!")
+            print(f"{prefix_string}Goal reached at t = {self.t}!")
         return collided or grounded or goal_reached
 
-    def is_truncated(self, verbose: bool = False) -> bool:
+    def is_truncated(self, verbose: bool = False, prefix_string: str = "") -> bool:
         """Check whether the current own-ship state is a truncated state (time limit reached).
 
         Args:
             verbose (bool): Whether to print out the reason for the truncation.
+            prefix_string (str): Prefix string to add to the printout.
 
         Returns:
             bool: Whether the current own-ship state is a truncated state
         """
         truncated = self.t > self.t_end
         if verbose and truncated:
-            print("Time limit reached!")
+            print(f"{prefix_string}Time limit reached!")
         return truncated
 
     def run_scenario_episode(
         self, terminate_on_collision_or_grounding: bool = True
-    ) -> Tuple[pd.DataFrame, dict, np.ndarray]:
+    ) -> Tuple[pd.DataFrame, Dict[str, Any], np.ndarray]:
         """Runs the simulator for a scenario episode specified by the ship object array, using a time step dt_sim.
 
         Args:
             terminate_on_collision_or_grounding (bool): Whether to terminate the simulation if a collision or grounding occurs.
 
         Returns: a tuple containing:
-            - sim_data (DataFrame): Dataframe/table containing the ship simulation data.
-            - ship_info (dict): Dictionary containing the ship info for each ship.
-            - sim_times (np.array): Array containing the simulation times.
+            - sim_data (pd.DataFrame): Dataframe containing the ship simulation data for each time step
+            - ship_info (Dict[str, Any]): Dictionary containing the ship info for each ship.
+            - sim_times (np.ndarray): Array containing the simulation times.
         """
 
         self.visualizer.init_live_plot(self.enc, self.ship_list)
@@ -319,14 +346,12 @@ class Simulator:
             )
 
             terminated = self.is_terminated(
-                verbose=self._config.verbose, terminate_on_collision_or_grounding=terminate_on_collision_or_grounding
+                verbose=self.config.verbose, terminate_on_collision_or_grounding=terminate_on_collision_or_grounding
             )
-            truncated = self.is_truncated(verbose=self._config.verbose)
+            truncated = self.is_truncated(verbose=self.config.verbose)
             if terminated or truncated:
                 t_end = self.t
                 break
-
-        self.visualizer.close_live_plot()
 
         sim_times = np.arange(self.t_start, t_end, self.dt)
         return pd.DataFrame(sim_data), ship_info, sim_times
@@ -335,7 +360,7 @@ class Simulator:
         """Step through the simulation by one time step.
 
         Args:
-            remote_actor (bool, optional): Whether the own-ship is controlled by a remote actor, i.e. references are set externally from the Ship object. Defaults to False.
+            remote_actor (bool, optional): Whether the own-ship is controlled by a remote actor, i.e. references are set externally from the Ship object. Used in DRL training.
 
         Returns:
             dict: Dictionary containing the current time step simulation data for each ship and the disturbance data if applicable.
@@ -353,10 +378,11 @@ class Simulator:
         true_do_states = mhm.extract_do_states_from_ship_list(self.t, self.ship_list)
         for i, ship_obj in enumerate(self.ship_list):
             if self.t < ship_obj.t_start:
+                sim_data_dict[f"Ship{i}"] = {}
                 continue
 
             tracks, new_measurements = [], []
-            if not (i > 0 and self._config.tracking_from_ownship_only):
+            if not (i > 0 and self.config.tracking_from_ownship_only):
                 relevant_true_do_states = mhm.get_relevant_do_states(true_do_states, i)
                 tracks, new_measurements = ship_obj.track_obstacles(self.t, self.dt, relevant_true_do_states)
 
@@ -442,8 +468,12 @@ class Simulator:
         d2grounding = self.distance_to_grounding(ship_idx)
         return d2grounding <= self.ship_list[ship_idx].length / 2.0
 
-    def determine_ship_goal_reached(self, ship_idx: int = 0) -> bool:
+    def determine_ship_goal_reached(self, ship_idx: int = 0, radius: Optional[float] = None) -> bool:
         """Determines whether the ship has reached its goal.
+
+        Args:
+            ship_idx (int, optional): Index of the ship to check for goal reached.
+            radius (Optional[float]): Radius around the goal to consider the goal reached.
 
         Returns:
             bool: True if the own-ship has reached its goal, False otherwise.
@@ -453,12 +483,13 @@ class Simulator:
         elif self.ship_list[ship_idx].waypoints.size > 1:
             goal_state = self.ownship.waypoints[:, -1]
         else:
-            raise ValueError(
-                "Either the goal pose must be provided, or a sufficient number of waypoints for the ship to follow!"
-            )
+            return False
         ship_state = self.ship_list[ship_idx].csog_state
         d2goal = np.linalg.norm(ship_state[:2] - goal_state[:2])
-        scale_factor = 4.0
+        if radius is not None:
+            return d2goal <= radius
+
+        scale_factor = 7.0
 
         # Check if the last wp has been passed
         d_0wp_vec = self.ship_list[ship_idx].waypoints[:, -1] - self.ship_list[ship_idx].csog_state[0:2]
@@ -470,20 +501,20 @@ class Simulator:
 
 
 def extract_valid_sensor_measurements(
-    t: float, recent_sensor_measurements: list, new_sensor_measurements: list
+    t: float,
+    recent_sensor_measurements: List[Tuple[int, np.ndarray]],
+    new_sensor_measurements: List[Tuple[int, np.ndarray]],
 ) -> list:
     """Extracts non-NaN sensor measurements from the recent sensor measurements list and appends them to the most recent sensor measurements list.
 
     Args:
         t (float): Current simulation time.
-        recent_sensor_measurements (list): List of most recent valid (non-nan) sensor measurements for the current ship
-        new_sensor_measurements (list): List of new sensor measurements for the current ship.
+        recent_sensor_measurements (List[Tuple[int, np.ndarray]]): List of most recent valid (non-nan) sensor measurements for the current ship
+        new_sensor_measurements (List[Tuple[int, np.ndarray]]): List of new sensor measurements for the current ship.
 
     Returns:
-        list: List of updated most recent valid (non-nan) sensor measurements for the current ship
+        List[Tuple[int, np.ndarray]]: List of updated most recent valid (non-nan) sensor measurements for the current ship
     """
-    if t == 0.0 or recent_sensor_measurements is None:
-        recent_sensor_measurements = new_sensor_measurements
     for j, sensor_j_measurements in enumerate(new_sensor_measurements):
         if not sensor_j_measurements:
             continue
@@ -492,5 +523,7 @@ def extract_valid_sensor_measurements(
             if not np.isnan(do_meas).any():
                 valid_meas.append((do_idx, do_meas))
         if valid_meas:
+            if not recent_sensor_measurements:
+                recent_sensor_measurements = [None] * len(new_sensor_measurements)
             recent_sensor_measurements[j] = valid_meas
     return recent_sensor_measurements

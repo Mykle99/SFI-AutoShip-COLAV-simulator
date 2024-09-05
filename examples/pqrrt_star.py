@@ -1,5 +1,6 @@
 """
-    Demonstrates how to use the PQ-RRT* algorithm with the colav-simulator.
+    Demonstrates how to use the PQ-RRT* algorithm with the colav-simulator. Note that the underlying ship model in the planner does not
+    match the ship model used from the colav-simulator, and thus should be tuned for usage outside this example.
 
     Remember to install the dependencies (COLAV-simulator) and rrt-rs https://github.com/NTNU-Autoship-Internal/rrt-rs before running this script.
 
@@ -8,8 +9,8 @@
     Author: Trym Tengesdal
 """
 
-from dataclasses import dataclass
-from typing import Optional, Tuple
+from dataclasses import dataclass, field
+from typing import List, Optional, Tuple
 
 import colav_simulator.common.map_functions as mapf
 import colav_simulator.common.paths as dp
@@ -30,25 +31,29 @@ from shapely import strtree
 
 @dataclass
 class RRTConfig:
-    params: PQRRTStarParams = PQRRTStarParams()
-    model: models.KinematicCSOGParams = models.KinematicCSOGParams(
-        name="KinematicCSOG",
-        draft=0.5,
-        length=10.0,
-        width=3.0,
-        T_chi=10.0,
-        T_U=7.0,
-        r_max=np.deg2rad(4),
-        U_min=0.0,
-        U_max=15.0,
+    params: PQRRTStarParams = field(default_factory=lambda: PQRRTStarParams())
+    model: models.KinematicCSOGParams = field(
+        default_factory=lambda: models.KinematicCSOGParams(
+            name="KinematicCSOG",
+            draft=0.5,
+            length=10.0,
+            width=3.0,
+            T_chi=10.0,
+            T_U=7.0,
+            r_max=np.deg2rad(4),
+            U_min=0.0,
+            U_max=15.0,
+        )
     )
-    los: guidances.LOSGuidanceParams = guidances.LOSGuidanceParams(
-        K_p=0.03,
-        K_i=0.0001,
-        pass_angle_threshold=90.0,
-        R_a=25.0,
-        max_cross_track_error_int=1000.0,
-        cross_track_error_int_threshold=30.0,
+    los: guidances.LOSGuidanceParams = field(
+        default_factory=lambda: guidances.LOSGuidanceParams(
+            K_p=0.03,
+            K_i=0.0001,
+            pass_angle_threshold=90.0,
+            R_a=25.0,
+            max_cross_track_error_int=1000.0,
+            cross_track_error_int_threshold=30.0,
+        )
     )
 
     @classmethod
@@ -92,10 +97,12 @@ def parse_rrt_solution(soln: dict) -> Tuple[np.ndarray, np.ndarray, np.ndarray, 
 
 @dataclass
 class RRTPlannerParams:
-    los: guidances.LOSGuidanceParams = guidances.LOSGuidanceParams(
-        K_p=0.035, K_i=0.0, pass_angle_threshold=90.0, R_a=25.0, max_cross_track_error_int=30.0
+    los: guidances.LOSGuidanceParams = field(
+        default_factory=lambda: guidances.LOSGuidanceParams(
+            K_p=0.035, K_i=0.0, pass_angle_threshold=90.0, R_a=25.0, max_cross_track_error_int=30.0
+        )
     )
-    rrt: RRTConfig = RRTConfig()
+    rrt: RRTConfig = field(default_factory=lambda: RRTConfig())
 
     @classmethod
     def from_dict(cls, config_dict: dict):
@@ -143,7 +150,7 @@ class PQRRTStar(ci.ICOLAV):
         waypoints: np.ndarray,
         speed_plan: np.ndarray,
         ownship_state: np.ndarray,
-        do_list: list,
+        do_list: List[Tuple[int, np.ndarray, np.ndarray, float, float]],
         enc: Optional[senc.ENC] = None,
         goal_state: Optional[np.ndarray] = None,
         w: Optional[stochasticity.DisturbanceData] = None,
@@ -173,6 +180,7 @@ class PQRRTStar(ci.ICOLAV):
                 U_d=U_d,
                 initialized=False,
                 return_on_first_solution=False,
+                verbose=True,
             )
             self._rrt_waypoints, self._rrt_trajectory, self._rrt_inputs, times, cost = parse_rrt_solution(rrt_solution)
 
@@ -244,11 +252,11 @@ if __name__ == "__main__":
     params.rrt.params = PQRRTStarParams(
         max_nodes=3000,
         max_iter=10000,
-        max_time=2.0,
+        max_time=5.0,
         iter_between_direct_goal_growth=500,
         min_node_dist=5.0,
         goal_radius=300.0,
-        step_size=1.0,
+        step_size=0.5,
         min_steering_time=1.0,
         max_steering_time=30.0,
         steering_acceptance_radius=10.0,
@@ -258,7 +266,6 @@ if __name__ == "__main__":
         safe_distance=0.5,
         max_ancestry_level=1,
     )
-
     rrt = PQRRTStar(params)
 
     scenario_file = dp.scenarios / "rrt_test.yaml"
@@ -270,4 +277,3 @@ if __name__ == "__main__":
     simulator.toggle_liveplot_visibility(True)
     # Hint: Close ENC Seacharts plot with RRT tree to speed up livesim
     output = simulator.run([scenario_data], colav_systems=[(0, rrt)], terminate_on_collision_or_grounding=False)
-    print("done")

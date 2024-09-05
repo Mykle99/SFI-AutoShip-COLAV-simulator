@@ -28,8 +28,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
-from seacharts.enc import ENC
+from typing import List, Optional, Tuple
 
 import colav_simulator.common.config_parsing as cp
 import colav_simulator.core.colav.kuwata_vo_alg.kuwata_vo as kvo
@@ -38,7 +37,7 @@ import colav_simulator.core.colav.sbmpc.sbmpc as sb_mpc
 import colav_simulator.core.stochasticity as stochasticity
 import matplotlib.pyplot as plt
 import numpy as np
-
+import seacharts.enc as senc
 
 
 class COLAVType(Enum):
@@ -131,27 +130,27 @@ class ICOLAV(ABC):
         waypoints: np.ndarray,
         speed_plan: np.ndarray,
         ownship_state: np.ndarray,
-        do_list: list,
-        enc: Optional[ENC] = None,
+        do_list: List[Tuple[int, np.ndarray, np.ndarray, float, float]],
+        enc: Optional[senc.ENC] = None,
         goal_state: Optional[np.ndarray] = None,
         w: Optional[stochasticity.DisturbanceData] = None,
-        **kwargs
+        **kwargs,
     ) -> np.ndarray:
-        """Plans a (hopefully) collision free trajectory for the ship to follow.
+        """Main COLAV planning function.
 
         Args:
-            t (float): The current time.
-            waypoints (np.ndarray): The waypoints to follow, typically used for COLAV planners assuming a nominal path/trajectory as input.
-            speed_plan (np.ndarray): The speed plan to follow. typically used for COLAV planners assuming a nominal path/trajectory as input.
-            ownship_state (np.ndarray): The ownship state [x, y, psi, u, v, r]. Used as start state in case of high level planners.
-            do_list (list): List of information on dynamic obstacles. This is a list of tuples of the form (id, state [x, y, Vx, Vy], covariance, length, width).
-            enc (Optional[ENC]): The relevant Electronic Navigational Chart (ENC) for static obstacle info. Defaults to None.
-            goal_state (Optional[np.ndarray]): The goal state [x, y, psi, u, v, r], typically used for high level COLAV planners where no nominal path/trajectory is assumed. Defaults to None.
-            w (Optional[stochasticity.DisturbanceData]): The stochastic disturbance data. Defaults to None.
+            t (float): The current time since the start of the simulation.
+            waypoints (np.ndarray): The waypoints to follow, typically used for COLAV planners assuming a nominal path/trajectory as input. Dimensions: [2, N] composed of the waypoint NE coordinates.
+            speed_plan (np.ndarray): Reference speeds at each waypoint, typically used for COLAV planners assuming a nominal path/trajectory as input.
+            ownship_state (np.ndarray): The ownship state [x, y, psi, u, v, r]^T. Used as start state in case of high level planners.
+            do_list (List[Tuple[int, np.ndarray, np.ndarray, float, float]]): List of dynamic obstacles in the vicinity of the ship, on the format (ID, state, covariance, length, width). The state is on the format [x, y, Vx, Vy]^T.
+            enc (Optional[ENC]): The relevant Electronic Navigational Chart (ENC) for static obstacle info.
+            goal_state (Optional[np.ndarray]): The goal state [x, y, psi, u, v, r]^T, typically used for high level COLAV planners where no nominal path/trajectory is assumed.
+            w (Optional[stochasticity.DisturbanceData]): The stochastic disturbance data.
             **kwargs: Additional arguments to the COLAV planning algorithm, e.g. the own-ship length.
 
         Returns:
-            np.ndarray: The planned poses, velocities and accelerations (vstacked) from the COLAV planning algorithm. Must be compatible with the control system you are using.
+            np.ndarray: The planned poses, velocities and accelerations (vstacked as a 9 x N array, N >= 1 being the number of samples) from the COLAV planning algorithm. Must be compatible with the control system you are using.
         """
 
     @abstractmethod
@@ -163,19 +162,19 @@ class ICOLAV(ABC):
         """Returns the current planned trajectory.
 
         Returns:
-            np.ndarray: The most recent planned poses, velocities and accelerations (vstacked) over the COLAV planning horizon (if any). Must be compatible with the control system you are using.
+            np.ndarray: The most recent planned poses, velocities and accelerations (vstacked as a 9 x N array, N >= 1 being the number of samples) over the COLAV planning horizon (if any). Must be compatible with the control system you are using.
         """
 
     @abstractmethod
     def get_colav_data(self) -> dict:
-        """Returns the plotting data relevant for the COLAV planning algorithm. This includes e.g. the predicted trajectory, considered obstacles, optimal inputs etc..
+        """Returns the plotting data relevant for the COLAV planning algorithm. This includes e.g. the predicted trajectory, considered obstacles, optimal inputs etc. Used for plotting and logging.
 
         Returns:
             dict: The relevant data used in the COLAV planning algorithm.
         """
 
     @abstractmethod
-    def plot_results(self, ax_map: plt.Axes, enc: ENC, plt_handles: dict, **kwargs) -> dict:
+    def plot_results(self, ax_map: plt.Axes, enc: senc.ENC, plt_handles: dict, **kwargs) -> dict:
         """Plots the COLAV planning algorithm results data, e.g. the predicted trajectory, considered obstacles, optimal inputs etc..
 
         Args:
@@ -215,11 +214,11 @@ class VOWrapper(ICOLAV):
         waypoints: np.ndarray,
         speed_plan: np.ndarray,
         ownship_state: np.ndarray,
-        do_list: list,
-        enc: Optional[ENC] = None,
+        do_list: List[Tuple[int, np.ndarray, np.ndarray, float, float]],
+        enc: Optional[senc.ENC] = None,
         goal_state: Optional[np.ndarray] = None,
         w: Optional[stochasticity.DisturbanceData] = None,
-        **kwargs
+        **kwargs,
     ) -> np.ndarray:
         if not self._initialized:
             self._t_prev = t
@@ -238,12 +237,15 @@ class VOWrapper(ICOLAV):
     def get_colav_data(self) -> dict:
         return {}
 
-    def plot_results(self, ax_map: plt.Axes, enc: ENC, plt_handles: dict, **kwargs) -> dict:
+    def plot_results(self, ax_map: plt.Axes, enc: senc.ENC, plt_handles: dict, **kwargs) -> dict:
         return plt_handles
 
 
 class SBMPCWrapper(ICOLAV):
-    """SBMPC wrapper for the Python implementation in this repository."""
+    """SBMPC is here implemented as a COLAV planning algorithm that provides trajectory offsets to the nominal LOS guidance.
+
+    NOTE: No land consideration is added in this implementation.
+    """
 
     def __init__(
         self,
@@ -252,7 +254,7 @@ class SBMPCWrapper(ICOLAV):
             layer1=LayerConfig(sbmpc=sb_mpc.SBMPCParams()),
             layer2=LayerConfig(los=guidance.LOSGuidanceParams()),
         ),
-        **kwargs
+        **kwargs,
     ) -> None:
         assert config.layer1.sbmpc is not None, "SBMPC must be on the first layer for the SBMPC wrapper."
         self._sbmpc = sb_mpc.SBMPC(config.layer1.sbmpc)
@@ -281,11 +283,11 @@ class SBMPCWrapper(ICOLAV):
         waypoints: np.ndarray,
         speed_plan: np.ndarray,
         ownship_state: np.ndarray,
-        do_list: list,
-        enc: Optional[ENC] = None,
+        do_list: List[Tuple[int, np.ndarray, np.ndarray, float, float]],
+        enc: Optional[senc.ENC] = None,
         goal_state: Optional[np.ndarray] = None,
         w: Optional[stochasticity.DisturbanceData] = None,
-        **kwargs
+        **kwargs,
     ) -> np.ndarray:
         if not self._initialized or t < 0.0001:
             self._t_prev = t
@@ -297,11 +299,12 @@ class SBMPCWrapper(ICOLAV):
         speed_ref = references[3, 0]
         if t - self._t_run_sbmpc_last >= 5.0:
             self._speed_os_best, self._course_os_best = self._sbmpc.get_optimal_ctrl_offset(
-                speed_ref, course_ref, ownship_state, do_list
+                speed_ref, course_ref, ownship_state, do_list, enc
             )
             self._t_run_sbmpc_last = t
-            # print(f"SBMPC course output: {np.rad2deg(course_ref) + self._course_os_best} | Best course offset: {self._course_os_best} | Nominal course ref: {course_ref}")
-            # print(f"SBMPC speed output: {speed_ref * self._speed_os_best} | Best speed offset: {self._speed_os_best} | Nominal speed ref: {speed_ref}")
+            # print(
+            #     f"[SBMPC] Course output: {np.rad2deg(course_ref + self._course_os_best)} | Best course offset: {np.rad2deg(self._course_os_best)} | Nominal course ref: {np.rad2deg(course_ref)} | Speed output: {speed_ref * self._speed_os_best} | Best speed offset: {self._speed_os_best} | Nominal speed ref: {speed_ref}"
+            # )
         references[2, 0] = course_ref + self._course_os_best
         references[3, 0] = speed_ref * self._speed_os_best
         return references
@@ -313,7 +316,7 @@ class SBMPCWrapper(ICOLAV):
     def get_colav_data(self) -> dict:
         return {}
 
-    def plot_results(self, ax_map: plt.Axes, enc: ENC, plt_handles: dict, **kwargs) -> dict:
+    def plot_results(self, ax_map: plt.Axes, enc: senc.ENC, plt_handles: dict, **kwargs) -> dict:
         return plt_handles
 
 

@@ -2,7 +2,7 @@
     observation.py
 
     Summary:
-        This file contains various observation type/space definitions for a ship agent in the colav-simulator.
+        This file contains various observation type/space definitions for a ship agent operating in the colav-simulator.
 
         To add an observation type:
         1: Create a new class inheriting from ObservationType and implement the abstract methods.
@@ -15,8 +15,9 @@
 """
 
 import time
+import tracemalloc
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Dict, Tuple, Union
+from typing import TYPE_CHECKING, Dict, List, Tuple, Union
 
 import colav_simulator.common.image_helper_methods as imghf
 import colav_simulator.common.map_functions as mapf
@@ -65,7 +66,9 @@ class ObservationType(ABC):
 
 
 class LidarLikeObservation(ObservationType):
-    """A lidar-like observation space for the own-ship, i.e. a 360 degree scan of the environment as is used in Meyer et. al. 2020."""
+    """A lidar-like observation space for the own-ship, i.e. a 360 degree scan
+    of the environment as is used in Meyer et. al. 2020.
+    """
 
     def __init__(self, env: "COLAVEnvironment") -> None:
         super().__init__(env)
@@ -73,13 +76,23 @@ class LidarLikeObservation(ObservationType):
         self.define_observation_ranges()
         self.name = "LidarLikeObservation"
 
-        # Sensor parameters. TODO: Implement config to set/change these variables
+        # Sensor parameters
         self.n_sensors = 180
         self.n_sectors = 9
-        self.sensing_range = 1500
+        self.sensing_range = 1000
+        self.OS_size_coefficient = 6.0  # Scales up OS size in feasibility pooling
+        self.TS_size_coefficient = 1.0  # Scales up TS polygons
+        self.do_polygons = []
 
         self._partition_sensors()
         self._create_spatial_index()
+
+        self.sensor_suite = None
+        self.current_dist_measurements = np.array([])
+        self.current_obstacle_velocities = np.array([])
+        self.current_sensor_angles = np.array([])
+        self.max_distance_measurement = np.array([self.sensing_range for i in range(self.n_sensors)])
+        self.min_velocity_measurement = np.array([(0.0, 0.0) for i in range(self.n_sensors)])
 
     def space(self) -> gym.spaces.Space:
         """Get the observation space."""
@@ -152,46 +165,49 @@ class LidarLikeObservation(ObservationType):
         """Get an observation of the environment state."""
         assert self.env.ownship is not None, "Ownship is not defined"
 
-        ownship_pos = sgeo.Point(
-            (self.env.ownship.state[1], self.env.ownship.state[0])
-        )  # Ownship position as (easting, northing) coordinates
+        # Ownship position as (easting, northing) coordinates
+        ownship_pos = (self.env.ownship.csog_state[1], self.env.ownship.csog_state[0])
+        ownship_pos_point = sgeo.Point((self.env.ownship.state[1], self.env.ownship.state[0]))
 
-        sensor_range = self.sensing_range
-        sensor_angles = self._sensor_angles + self.env.ownship.heading  # Rotation of sensor suite
-
-        grounding_hazards = self.grounding_hazards
-        dynamic_obstacles = self.env.dynamic_obstacles
-
-        # Convert ship objects to polygons
+        # Create TS polygons
         dynamic_obstacle_polygons = []
-        for dynamic_obstacle in dynamic_obstacles:
-            do_state = dynamic_obstacle.csog_state
+        tracks, _ = self.env.ownship.get_do_track_information()
+        for track in tracks:
+            do_estimate = track[1]
+            do_length = track[3]
+            do_width = track[4]
+            do_state = mhm.convert_vxvy_state_to_sog_cog_state(do_estimate)
+
             dynamic_obstacle_polygons.append(
                 mapf.create_ship_polygon(
                     x=do_state[0],
                     y=do_state[1],
-                    heading=dynamic_obstacle.heading,
-                    length=dynamic_obstacle.length,
-                    width=dynamic_obstacle.width,
+                    heading=do_state[3],
+                    length=do_length,
+                    width=do_width,
+                    length_scaling=self.TS_size_coefficient,
+                    width_scaling=self.TS_size_coefficient,
                 )
             )
 
-        # Determine distance and velocities to obstacles in each sector
-        obstacle_distances = list()
-        obstacle_velocities = list()
-        for isensor in range(self.n_sensors):
-            closest_obstacle_dist, closest_obstacle_vel = self._cast_sensor_ray(
-                ownship_pos=ownship_pos,
-                sensor_angle=sensor_angles[isensor],
-                sensor_range=sensor_range,
-                grounding_hazards=grounding_hazards,
-                dynamic_obstacles=dynamic_obstacle_polygons,
-            )
-            obstacle_distances.append(closest_obstacle_dist)
-            obstacle_velocities.append(closest_obstacle_vel)
+        self.do_polygons = dynamic_obstacle_polygons
 
-        obstacle_distances = np.array(obstacle_distances)
-        obstacle_velocities = np.array(obstacle_velocities)
+        # Creation and transformation of sensor suite polygon
+        if self.sensor_suite is None:
+            self.sensor_suite = self._create_sensor_suite(ownship_pos)
+
+        self.sensor_suite = self._translate_sensor_suite(ownship_pos=ownship_pos, sensor_suite=self.sensor_suite)
+
+        # The sensor suite is rotated from 0 heading angle each iteration
+        sensor_suite = self._rotate_sensor_suite(
+            ownship_heading=self.env.ownship.heading, sensor_suite=self.sensor_suite
+        )
+        # Simulate the sensor suite
+        obstacle_distances, obstacle_velocities = self._sense(
+            ownship_pos=ownship_pos_point,
+            sensor_suite=sensor_suite,
+            dynamic_obstacle_polygons=dynamic_obstacle_polygons,
+        )
 
         # Split distance and velocity measurements into sectors
         obstacle_distances_by_sector = np.split(obstacle_distances, self._sector_start_indices[1:])
@@ -210,6 +226,10 @@ class LidarLikeObservation(ObservationType):
 
         obs = np.concatenate([np.array(sector_closeness), np.array(sector_velocities).flatten()])
 
+        # Update latest measurements
+        self.current_dist_measurements = obstacle_distances
+        self.current_obstacle_velocities = obstacle_velocities
+
         return self.normalize(obs)
 
     def _feasibility_pooling(self, x: list) -> float:
@@ -224,7 +244,7 @@ class LidarLikeObservation(ObservationType):
             float: Longest feasible distance within the current sector
 
         """
-        ship_width = self.env.ownship.get_ship_info()["width"]
+        ship_width = self.OS_size_coefficient * self.env.ownship.width
         theta = self._delta_sensor_angle
 
         # Get sorted list of x with corresponding indices
@@ -278,8 +298,7 @@ class LidarLikeObservation(ObservationType):
         Returns:
             int: Index of the corresponding sector
         """
-        sigma = self._sigma(float(isensor))
-        return int(np.floor(sigma(isensor) - sigma(0)))
+        return int(np.floor(self._sigma(isensor) - self._sigma(0)))
 
     def _sigma(self, x: float) -> float:
         """Sigmoid function used for mapping sensor indices to sectors."""
@@ -303,83 +322,139 @@ class LidarLikeObservation(ObservationType):
         closeness = np.clip(a=(1 - np.log(distance + 1) / np.log(self.sensing_range + 1)), a_min=0, a_max=1)
         return closeness
 
-    def _cast_sensor_ray(
-        self,
-        ownship_pos: sgeo.Point,
-        sensor_angle: float,
-        sensor_range: float,
-        grounding_hazards: list,
-        dynamic_obstacles: list,
-    ):
-        """Cast sensor ray and return coordinates of closest obstacle
+    def _create_spatial_index(self):
+        """Creates an R-tree spatial index of the relevant grounding hazards."""
+        grounding_hazards = np.array([])
+        geoms = []
+        for poly in self.env.relevant_grounding_hazards_as_union:
+            if isinstance(poly, shapely.Polygon):
+                continue
+            geoms = np.array([geom for geom in poly.geoms])
+            grounding_hazards = np.concatenate([grounding_hazards, geoms])
+
+        self.grounding_hazards = grounding_hazards
+        self.grounding_spatial_index = shapely.STRtree(geoms)
+
+    def _create_sensor_suite(self, ownship_pos: np.ndarray):
+        """Creates a sensor suite polygon consisting of n_sensors linestrings
+        covering 360 degrees of the ownship surroundings
 
         Args:
-            - ownship_pos (Point): Ownship coordinates (east, north)
-            - sensor_angle (float): Angle of sensor relative to ownships body frame [rad]
-            - sensor_range (float): Range of sensor [m]
-            - grounding_hazards (list): List of grounding hazards as a list of geometry objects
-            - dynamic_obstacles (list): List of dynamic obstacles as polygons
+            ownship_pos(array): Ownship position as (easting, northing) coordinates
 
         Returns:
-            Tuple[float | float]: Distance and velocity of the closest detected obstacle as a tuple.
+            Multilinestring[Linestring]: The multilinestring representing the sensor suite
         """
-        sensor_endpoint = (
-            ownship_pos.x + np.sin(sensor_angle) * sensor_range,
-            ownship_pos.y + np.cos(sensor_angle) * sensor_range,
-        )
+        linestrings = []
+        for sensor_angle in self._sensor_angles:
+            endpoint = (
+                ownship_pos[0] + np.sin(sensor_angle) * self.sensing_range,  # Easting coordinate
+                ownship_pos[1] + np.cos(sensor_angle) * self.sensing_range,  # Northing coordinate
+            )
 
-        sensor_ray = sgeo.LineString([ownship_pos, sensor_endpoint])
-        closest_obstacle_dist = sensor_range
-        closest_obstacle_vel = (0, 0)
+            linestrings.append(shapely.LineString((ownship_pos, endpoint)))
 
-        # Grounding hazards
-        closest_hazard_idx = self.grounding_spatial_index.query_nearest(
-            geometry=sensor_ray, max_distance=self.sensing_range, exclusive=True, all_matches=True
-        )
-        # Find closest obstacle among query results
-        if np.any(closest_hazard_idx):
-            for idx in closest_hazard_idx:
-                if shapely.intersects(sensor_ray, grounding_hazards[idx]):
-                    intersection = shapely.intersection(sensor_ray, grounding_hazards[idx])
-                    intersection = mapf.standardize_polygon_intersections(
-                        shapely.intersection(sensor_ray, grounding_hazards[idx])
-                    )
-                    if ownship_pos.distance(intersection) < closest_obstacle_dist:
-                        closest_obstacle_dist = ownship_pos.distance(intersection)
+        return shapely.MultiLineString(linestrings)
+
+    def _translate_sensor_suite(
+        self, ownship_pos: np.ndarray, sensor_suite: shapely.MultiLineString
+    ) -> shapely.MultiLineString:
+        """Moves the sensor suite polygon to the current ownship position
+
+        Args:
+            ownship_pos (array): ownship position as (easting, northing) coordinates
+            sensor_suite (MultiLineString): current sensor suite polygon
+
+        Returns:
+            MultiLineString: Translated sensor suite
+        """
+        dist = np.array(ownship_pos) - np.array(sensor_suite.geoms[0].coords[0])
+        return shapely.affinity.translate(sensor_suite, dist[0], dist[1])
+
+    def _rotate_sensor_suite(
+        self, ownship_heading: float, sensor_suite: shapely.MultiLineString
+    ) -> shapely.MultiLineString:
+        """Rotates the sensor suite polygon to match the ownship heading
+
+        Args:
+            ownship_heading (float): Heading angle in radians
+            sensor_suite (MultiLineString): current sensor suite polygon
+
+        Returns:
+            MultiLineString: Rotated sensor suite
+
+        """
+        return shapely.affinity.rotate(geom=sensor_suite, angle=-ownship_heading, use_radians=True)
+
+    def _sense(
+        self,
+        ownship_pos: shapely.Point,
+        sensor_suite: shapely.MultiLineString,
+        dynamic_obstacle_polygons: List[shapely.Polygon],
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Simulates the sensor suite. For each sensor in the sensor suite the
+        distance to the closest obstacle is found. If the obstacle is dynamic,
+        the velocity is also decomposed in a vessel-relative frame and returned
+
+        Args:
+            ownship_pos (Point): Ownship position (easting, northing) as a Point polygon
+            sensor_suite (MultiLineString): Polygon representing the sensor suite
+            dynamic_obstacle_polygons (list): List of polygons representing the target ships
+
+        Returns:
+            Tuple (ndarray, ndarray): Tuple of the measured distances (size = n_sensors)
+            and decomposed velocities (size = 2*n_sensors) for the entire sensor suite
+        """
+        # Create empty arrays for both measurements
+        distances = self.max_distance_measurement.copy()
+        velocities = self.min_velocity_measurement.copy()
+
+        # Decompose sensor suite multilinestring into list of linestrings
+        sensor_rays = np.array(sensor_suite.geoms)
+        # Query for intersections with grounding hazards
+        static_indices = self.grounding_spatial_index.query(geometry=sensor_rays, predicate="intersects", distance=0)
+        # Get query result on the form [(sensor index, hazard index), ...]
+        static_indices = static_indices.T.tolist()
+
+        for sensor_idx, static_idx in static_indices:
+            intersection = mapf.standardize_polygon_intersections(
+                shapely.intersection(sensor_rays[sensor_idx], self.grounding_hazards[static_idx])
+            )
+            dist = ownship_pos.distance(intersection)
+
+            if dist < distances[sensor_idx]:
+                distances[sensor_idx] = dist
 
         # Dynamic obstacles
-        for idx, dynamic_obstacle in enumerate(dynamic_obstacles):
-            if shapely.intersects(sensor_ray, dynamic_obstacle):
-                intersection = sensor_ray.intersection(dynamic_obstacle)
-                intersection = mapf.standardize_polygon_intersections(intersection)
-                if ownship_pos.distance(intersection) < closest_obstacle_dist:
-                    closest_obstacle_dist = ownship_pos.distance(intersection)
+        dynamic_strtree = shapely.STRtree(dynamic_obstacle_polygons)
 
-                    # Decompose velocity in sensor sector coordinates
-                    csog_state = self.env.dynamic_obstacles[idx].csog_state
-                    vxvy_state = mhm.convert_state_to_vxvy_state(csog_state)
-                    closest_obstacle_vel = np.array([vxvy_state[2], vxvy_state[3]]).T
-                    closest_obstacle_vel = mf.Rmtrx2D(-sensor_angle - np.pi / 2).dot(closest_obstacle_vel)
+        # Query for intersections between sensor linestrings and dynamic obstacles
+        dynamic_indices = dynamic_strtree.query(geometry=sensor_rays, predicate="intersects", distance=0)
+        # Get query result on the form [(sensor index, target ship index), ...]
+        dynamic_indices = dynamic_indices.T.tolist()
 
-        return closest_obstacle_dist, closest_obstacle_vel
+        for sensor_idx, dynamic_idx in dynamic_indices:
+            intersection = mapf.standardize_polygon_intersections(
+                shapely.intersection(sensor_rays[sensor_idx], dynamic_obstacle_polygons[dynamic_idx])
+            )
+            dist = ownship_pos.distance(intersection)
 
-    def _create_spatial_index(self):
-        """Creates a R-tree spatial index of the relevant grounding hazards."""
-        grounding_hazards = np.array([])
-        for poly in self.env.relevant_grounding_hazards:
-            geoms = np.array([geom for geom in poly.geoms])
-            np.concatenate([grounding_hazards, geoms])
+            if dist < distances[sensor_idx]:
+                distances[sensor_idx] = dist
+                # Decompose velocity in sensor sector coordinates
+                csog_state = self.env.dynamic_obstacles[dynamic_idx].csog_state
+                vxvy_state = mhm.convert_state_to_vxvy_state(csog_state)
+                velocity_ned = np.array([vxvy_state[2], vxvy_state[3]]).T
+                # Rotate velocity vector to sensor coordinates
+                R_ned_to_sensor = mf.Rmtrx2D(self.env.ownship.heading + self._sensor_angles[sensor_idx] + np.pi / 2)
+                velocity_sensor = R_ned_to_sensor.T @ velocity_ned
+                velocities[sensor_idx] = velocity_sensor
 
-        self.grounding_hazards = geoms
-        self.grounding_spatial_index = shapely.STRtree(geoms)
+        return distances, velocities
 
 
 class PathRelativeNavigationObservation(ObservationType):
-    """Observes the own-ship navigational info relative to a nominal geometric path on
-    the form:
-
-    [distance_to_path, speed_reference_error, u, v, r]
-    """
+    """Observes the own-ship navigational info relative to a nominal geometric path"""
 
     def __init__(
         self,
@@ -400,6 +475,8 @@ class PathRelativeNavigationObservation(ObservationType):
         self._final_arc_length = None
         self._path_coords = None
         self._path_linestring = None
+        self._x_spline = None
+        self._y_spline = None
 
     def plot_path(self) -> None:
         """Plot the nominal path."""
@@ -427,7 +504,7 @@ class PathRelativeNavigationObservation(ObservationType):
 
     def create_path(self) -> None:
         """Creates a nominal path + speed spline based on the ownship waypoints and speed plan."""
-        self._map_origin = self._map_origin = self.env.ownship.csog_state[:2]
+        self._map_origin = self.env.ownship.csog_state[:2]
         speed_plan = self.env.ownship.speed_plan.copy()
         speed_plan[speed_plan > 7.0] = 6.0
         speed_plan[speed_plan < 2.0] = 2.0
@@ -437,10 +514,10 @@ class PathRelativeNavigationObservation(ObservationType):
             speed_plan=speed_plan,
             arc_length_parameterization=True,
         )
-        x_spline, y_spline, _, self._speed_spline, self._final_arc_length = os_nominal_path
+        self._x_spline, self._y_spline, _, self._speed_spline, self._final_arc_length = os_nominal_path
         self.plot_path()
         path_vals = np.linspace(0, self._final_arc_length, 1000)
-        self._path_coords = x_spline(path_vals), y_spline(path_vals)
+        self._path_coords = self._x_spline(path_vals), self._y_spline(path_vals)
         self._path_linestring = sgeo.LineString(np.array([self._path_coords[0], self._path_coords[1]]).T)
 
     def space(self) -> gym.spaces.Space:
@@ -448,7 +525,8 @@ class PathRelativeNavigationObservation(ObservationType):
 
     def define_observation_ranges(self) -> None:
         self.observation_range = {
-            "distance": (0.0, 2000.0),
+            "distance": (0.0, 1500.0),
+            "angles": (-np.pi, np.pi),
             "speed": (-self.env.ownship.max_speed, self.env.ownship.max_speed),
             "turn_rate": (-self.env.ownship.max_turn_rate, self.env.ownship.max_turn_rate),
         }
@@ -457,8 +535,8 @@ class PathRelativeNavigationObservation(ObservationType):
         normalized_obs = np.array(
             [
                 mf.linear_map(obs[0], self.observation_range["distance"], (-1.0, 1.0)),
-                mf.linear_map(obs[1], self.observation_range["speed"], (-1.0, 1.0)),
-                mf.linear_map(obs[2], self.observation_range["speed"], (-1.0, 1.0)),
+                mf.linear_map(obs[1], self.observation_range["distance"], (-1.0, 1.0)),
+                mf.linear_map(obs[2], self.observation_range["angles"], (-1.0, 1.0)),
                 mf.linear_map(obs[3], self.observation_range["speed"], (-1.0, 1.0)),
                 mf.linear_map(obs[4], self.observation_range["turn_rate"], (-1.0, 1.0)),
             ],
@@ -470,8 +548,8 @@ class PathRelativeNavigationObservation(ObservationType):
         unnormalized_obs = np.array(
             [
                 mf.linear_map(obs[0], (-1.0, 1.0), self.observation_range["distance"]),
-                mf.linear_map(obs[1], (-1.0, 1.0), self.observation_range["speed"]),
-                mf.linear_map(obs[2], (-1.0, 1.0), self.observation_range["speed"]),
+                mf.linear_map(obs[1], (-1.0, 1.0), self.observation_range["distance"]),
+                mf.linear_map(obs[2], (-1.0, 1.0), self.observation_range["angles"]),
                 mf.linear_map(obs[3], (-1.0, 1.0), self.observation_range["speed"]),
                 mf.linear_map(obs[4], (-1.0, 1.0), self.observation_range["turn_rate"]),
             ],
@@ -507,12 +585,25 @@ class PathRelativeNavigationObservation(ObservationType):
         if self.env.time < 0.0001:
             self.create_path()
         state = self.env.ownship.state - np.array([self._map_origin[0], self._map_origin[1], 0, 0, 0, 0])
+        course = state[2] + np.arctan2(state[4], state[3])
         s = self.get_closest_arclength(state[:2])
         d2path = self.distance_to_path(state[:2])
+        d2goal = np.linalg.norm(self.env.ownship.waypoints[:, -1] - self.env.ownship.state[:2])
         speed = np.linalg.norm(state[3:5])
         speed_diff = self._speed_spline(s) - speed
-        obs = np.array([d2path, speed_diff, state[3], state[4], state[5]])
-        return self.normalize(obs)
+        lookahead_distance = 100.0
+        s_lookahead = s + lookahead_distance
+        p_lookahead = np.array([self._x_spline(s_lookahead), self._y_spline(s_lookahead)])
+        course_error = np.arctan2(p_lookahead[1] - state[1], p_lookahead[0] - state[0]) - course
+        course_error = mf.wrap_angle_to_pmpi(course_error)
+        # print(
+        #     f"{self.env.env_id} | d2goal: {d2goal:.2f} | d2path: {d2path:.2f} | s: {s:.2f} | speed dev: {speed_diff:.2f} | course err: {course_error:.2f}"
+        # )
+
+        obs = np.array([d2path, d2goal, course_error, speed_diff, state[5]])
+        normalized_obs = self.normalize(obs)
+        normalized_obs = np.clip(normalized_obs, -1.0, 1.0)
+        return normalized_obs
 
 
 class Navigation3DOFStateObservation(ObservationType):
@@ -577,6 +668,173 @@ class Navigation3DOFStateObservation(ObservationType):
         state = self.env.ownship.state
         obs = state
         return self.normalize(obs)
+
+
+class NavigationPathObservation(ObservationType):
+    """Observation of the ship's state in relation to a preplanned trajectory,
+    as implemented in Meyer et al.(2020).
+    NOTE: Extended to include the observation of speed error.
+    """
+
+    def __init__(self, env: "COLAVEnvironment") -> None:
+        super().__init__(env)
+        self.name = "NavigationPathObservation"
+        self.size = 7
+        self.define_observation_ranges()
+
+        self.wp_linestring = None
+
+        self.lookahead_dist = 100
+        self.max_cross_track_error = 50
+
+    def space(self) -> gym.spaces.Space:
+        """Get the observation space."""
+        return gym.spaces.Box(low=-1.0, high=1.0, shape=(self.size,), dtype=np.float32)
+
+    def define_observation_ranges(self) -> None:
+        """Define the ranges for the observation space."""
+        self.observation_range = {
+            "speed": (-self.env.ownship.max_speed, self.env.ownship.max_speed),
+            "turn_rate": (-self.env.ownship.max_turn_rate, self.env.ownship.max_turn_rate),
+            "angles": (-np.pi, np.pi),
+            "cte": (-500, 500),
+        }
+
+    def normalize(self, obs: Observation) -> Observation:
+        """Normalize the input observation entries to be within the range [-1, 1], based on the ranges for each observation dimension.
+
+        Args:
+            obs (Observation): The observation to normalize.
+
+        Returns:
+            Observation: Normalized observation.
+        """
+        normalized_obs = np.array(
+            [
+                mf.linear_map(obs[0], self.observation_range["speed"], (-1.0, 1.0)),
+                mf.linear_map(obs[1], self.observation_range["speed"], (-1.0, 1.0)),
+                mf.linear_map(obs[2], self.observation_range["turn_rate"], (-1.0, 1.0)),
+                mf.linear_map(obs[3], self.observation_range["cte"], (-1.0, 1.0)),
+                mf.linear_map(obs[4], self.observation_range["angles"], (-1.0, 1.0)),
+                mf.linear_map(obs[5], self.observation_range["angles"], (-1.0, 1.0)),
+                mf.linear_map(obs[6], self.observation_range["speed"], (-1.0, 1.0)),
+            ],
+            dtype=np.float32,
+        )
+        return normalized_obs
+
+    def unnormalize(self, obs: Observation) -> Observation:
+        """Unnormalize the input normalized observation to be within the original range
+
+        Args:
+            obs (Observation): The observation to unnormalize.
+
+        Returns:
+            Observation: Unnormalized observation.
+        """
+        # No unnormalization is provided for this observation type
+        unnormalized_obs = np.array(
+            [
+                mf.linear_map(obs[0], (-1.0, 1.0), self.observation_range["speed"]),
+                mf.linear_map(obs[1], (-1.0, 1.0), self.observation_range["speed"]),
+                mf.linear_map(obs[2], (-1.0, 1.0), self.observation_range["turn_rate"]),
+                mf.linear_map(obs[3], (-1.0, 1.0), self.observation_range["cte"]),
+                mf.linear_map(obs[4], (-1.0, 1.0), self.observation_range["angles"]),
+                mf.linear_map(obs[5], (-1.0, 1.0), self.observation_range["angles"]),
+                mf.linear_map(obs[6], (-1.0, 1.0), self.observation_range["speed"]),
+            ],
+            dtype=np.float32,
+        )
+        return unnormalized_obs
+
+    def observe(self) -> Observation:
+        """Get an observation on the form:
+        obs = [ surge velocity, sway velocity, yaw rate, cross-track error,
+                course error, look-ahead course error, speed error]
+
+        Returns:
+            np.ndarray: Normalized observation vector
+        """
+        if self.env.time < 0.0001:
+            self.set_waypoints(self.env.ownship.waypoints)
+
+        assert self.wp_linestring is not None, "Path is not defined"
+        ownship_pos = self.env.ownship.csog_state[:2]
+        ownship_course = self.env.ownship.csog_state[3]
+
+        # Arc length from the start of the path to the ownship position
+        ownship_ref = self.wp_linestring.line_locate_point(shapely.Point(ownship_pos))
+        # Ownship reference point projected onto the path
+        ownship_ref_point = self.wp_linestring.line_interpolate_point(ownship_ref)
+        ownship_ref_point = np.array(ownship_ref_point.coords[0])
+
+        path_angle = self.get_path_angle(ownship_ref)
+
+        lookahead_point = self.wp_linestring.line_interpolate_point(ownship_ref + self.lookahead_dist)
+        lookahead_point = np.array(lookahead_point.coords[0])
+
+        # Catch the cases where lookahead distance is beyond the last waypoint
+        if ownship_ref + self.lookahead_dist >= self.wp_linestring.length:
+            LA_path_angle = self.get_path_angle(self.wp_linestring.length - 1)
+        else:
+            LA_path_angle = self.get_path_angle(ownship_ref + self.lookahead_dist)
+
+        # Course angle errors at the ownship reference and lookahead point
+        course_error = mf.wrap_angle_diff_to_pmpi(
+            np.arctan2(lookahead_point[1] - ownship_pos[1], lookahead_point[0] - ownship_pos[0]), ownship_course
+        )
+        course_error_LA = mf.wrap_angle_diff_to_pmpi(LA_path_angle, ownship_course)
+
+        # Cross track error
+        cte = -np.sin(path_angle) * (ownship_ref_point[0] - ownship_pos[0]) + np.cos(path_angle) * (
+            ownship_ref_point[1] - ownship_pos[1]
+        )
+
+        # Speed error
+        ownship_speed = self.env.ownship.csog_state[2]
+        # TODO: add functionality to handle waypoint switching in speed plan
+        reference_speed = self.env.ownship.speed_plan[0]
+        speed_error = reference_speed - ownship_speed
+
+        obs = np.concatenate((self.env.ownship.state[3:], np.array([cte, course_error, course_error_LA, speed_error])))
+
+        assert obs.shape == (self.size,), "Path observation is not correct shape!"
+        return self.normalize(obs)
+
+    def get_path_angle(self, ref_dist: float):
+        """Calculates the angle of the path tangential line at a given reference
+        distance from the path starting point
+
+        Args:
+            ref_dist(float): Distance along path from starting point to the reference point
+
+        Returns:
+            float: Angle from north vector to path tangent line
+        """
+        dp = 0.1
+        # Reference point
+        p = self.wp_linestring.line_interpolate_point(ref_dist)
+
+        # Reference point + a small distance dp
+        pdp = self.wp_linestring.line_interpolate_point(ref_dist + dp)
+
+        tangent = np.array(pdp.coords[0]) - np.array(p.coords[0])
+        return np.arctan2(tangent[1], tangent[0])
+
+    def set_waypoints(self, waypoints: np.ndarray):
+        """Sets the current waypoints. Creates a path linestring of linear segments.
+
+        Args:
+            waypoints(np.ndarray): waypoints in NED coordinates
+        """
+        n_wps = waypoints.shape[1]
+        self.wp_linestring = shapely.LineString(np.array([waypoints[:, i] for i in range(n_wps)]))
+
+    @property
+    def path_progress(self) -> float:
+        """The ownship progress along the path normalized to [0, 1]."""
+        ownship_pos = self.env.ownship.csog_state[:2]
+        return self.wp_linestring.line_locate_point(shapely.Point(ownship_pos), normalized=True)
 
 
 class DisturbanceObservation(ObservationType):
@@ -716,7 +974,7 @@ class TrackingObservation(ObservationType):
         super().__init__(env)
         assert self.env.ownship is not None, "Ownship is not defined"
         self.max_num_do = 15
-        self.do_info_size = 6 + 16  # [x, y, Vx, Vy, length, width] + covariance matrix of 4x4
+        self.do_info_size = 1 + 6 + 16  # ID + [x, y, Vx, Vy, length, width] + covariance matrix of 4x4
         self.name = "TrackingObservation"
         self.define_observation_ranges()
 
@@ -780,8 +1038,8 @@ class TrackingObservation(ObservationType):
         tracks, _ = self.env.ownship.get_do_track_information()
         obs = np.zeros((self.do_info_size, self.max_num_do), dtype=np.float32)
         for idx, (do_idx, do_state, do_cov, do_length, do_width) in enumerate(tracks):
-            obs[:6, idx] = np.array([do_state[0], do_state[1], do_state[2], do_state[3], do_length, do_width])
-            obs[6:, idx] = do_cov.flatten()
+            obs[:7, idx] = np.array([do_idx, do_state[0], do_state[1], do_state[2], do_state[3], do_length, do_width])
+            obs[7:, idx] = do_cov.flatten()
         return obs
 
 
@@ -822,11 +1080,11 @@ class TimeObservation(ObservationType):
 class PerceptionImageObservation(ObservationType):
     """Observation consisting of a perception image."""
 
-    def __init__(self, env: "COLAVEnvironment", image_dim: Tuple[int, int, int] = (1, 256, 256), **kwargs) -> None:
+    def __init__(self, env: "COLAVEnvironment", image_dim: Tuple[int, int, int] = (1, 128, 128), **kwargs) -> None:
         """
         Args:
             env (COLAVEnvironment): The environment to observe.
-            image_dim (Tuple[int, int, int], optional): The dimensions of the image. Defaults to (1, 256, 256) (history window of 1)
+            image_dim (Tuple[int, int, int], optional): The dimensions of the image. Defaults to (1, 128, 128) (history window of 1)
         """
         super().__init__(env)
         self.name = "PerceptionImageObservation"
@@ -835,6 +1093,8 @@ class PerceptionImageObservation(ObservationType):
         self.previous_image_stack: np.ndarray = np.zeros(image_dim, dtype=np.uint8)  # All black
         self.t_prev: float = 0.0
         self.render_rate: float = 0.5  # Hz
+        self.env.simulator.visualizer.set_update_rate(self.render_rate)
+        self.resize: bool = True
 
     def space(self) -> gym.spaces.Space:
         """Get the observation space."""
@@ -849,20 +1109,24 @@ class PerceptionImageObservation(ObservationType):
         return obs
 
     def toggle_unneccessary_liveplot_features(self, show: bool) -> None:
-        self.env.viewer2d.toggle_uniform_seabed_color(show)
-        self.env.viewer2d.toggle_liveplot_sensor_measurement_visibility(show)
-        self.env.viewer2d.toggle_liveplot_trajectory_visibility(show)
-        self.env.viewer2d.toggle_liveplot_waypoint_visibility(show)
-        self.env.viewer2d.toggle_liveplot_disturbance_visibility(show)
-        self.env.viewer2d.toggle_liveplot_dynamic_obstacle_visibility(show)
-        self.env.viewer2d.toggle_misc_plot_visibility(show)
+        self.env.simulator.visualizer.toggle_uniform_seabed_color(show)
+        self.env.simulator.visualizer.toggle_liveplot_sensor_measurement_visibility(show)
+        self.env.simulator.visualizer.toggle_liveplot_trajectory_visibility(show)
+        self.env.simulator.visualizer.toggle_liveplot_waypoint_visibility(show)
+        self.env.simulator.visualizer.toggle_liveplot_disturbance_visibility(show)
+        self.env.simulator.visualizer.toggle_liveplot_dynamic_obstacle_visibility(show)
+        self.env.simulator.visualizer.toggle_misc_plot_visibility(show)
 
     def observe(self) -> Observation:
         assert self.env.ownship is not None, "Ownship is not defined"
         # t_now = time.time()
         if self.env.time < 0.001:
             self.t_prev = self.env.time
+            self.previous_image_stack = np.zeros(self.image_dim, dtype=np.uint8)
 
+        # img = np.zeros((128, 128, 3), dtype=np.uint8)
+        assert self.env.simulator.visualizer is not None, "Visualizer is not defined"
+        self.env.render()  # must be called to update the liveplot image
         self.toggle_unneccessary_liveplot_features(show=False)
         img = self.env.liveplot_image.copy()
         self.toggle_unneccessary_liveplot_features(show=True)
@@ -880,16 +1144,16 @@ class PerceptionImageObservation(ObservationType):
         # Image coordinate system is (0,0) in the upper left corner, height is the first index, width is the second index
         center_pixel_x = int(rotated_img.shape[0] // 2)
         center_pixel_y = int(rotated_img.shape[1] // 2)
-        cutoff_index_below_vessel = int(0.05 * npx)  # corresponds to 100 m for a 1200 m zoom width
+        cutoff_index_below_vessel = int(0.05 * npx)
         cutoff_index_below_vessel = (
             cutoff_index_below_vessel if cutoff_index_below_vessel <= center_pixel_y else center_pixel_y
         )
 
-        cutoff_index_above_vessel = int(0.4 * npx)  # corresponds to 400 m for a 1200 m zoom width
+        cutoff_index_above_vessel = int(0.4 * npx)
         cutoff_index_above_vessel = (
             cutoff_index_above_vessel if cutoff_index_above_vessel <= center_pixel_x else center_pixel_x
         )
-        cutoff_laterally = int(0.2 * npy)  # corresponds to 150 m for a 1000 m zoom width
+        cutoff_laterally = int(0.2 * npy)
 
         cropped_img = rotated_img[
             center_pixel_x - cutoff_index_above_vessel : center_pixel_x + cutoff_index_below_vessel,
@@ -897,7 +1161,11 @@ class PerceptionImageObservation(ObservationType):
         ]
 
         # downsample the image to configured image shape
-        downsampled_img = cv2.resize(cropped_img, (self.image_dim[1], self.image_dim[2]), interpolation=cv2.INTER_AREA)
+        downsampled_img = cropped_img
+        if self.resize:
+            downsampled_img = cv2.resize(
+                cropped_img, (self.image_dim[1], self.image_dim[2]), interpolation=cv2.INTER_AREA
+            )
         grayscale_img = cv2.cvtColor(downsampled_img, cv2.COLOR_BGR2GRAY)
 
         if False:
@@ -966,7 +1234,6 @@ class DictObservation(ObservationType):
 
     def space(self) -> gym.spaces.Space:
         obs_space = dict()
-
         for obs_type in self.observation_types:
             obs_space[obs_type.name] = obs_type.space()
         return gym.spaces.Dict(obs_space)
@@ -1062,6 +1329,8 @@ class RelativeTrackingObservation(ObservationType):
         obs[0, :] = self.observation_range["distance"][1]  # Set all distances to max value
         R_psi = mf.Rmtrx2D(os_state[2])
         for idx, (do_idx, do_state, do_cov, do_length, do_width) in enumerate(tracks):
+            if idx > self.max_num_do - 1:
+                break
             speed_cov = do_cov[2:4, 2:4]
             rel_speed = R_psi.T @ do_state[2:4] - os_state[3:5]
             rel_speed_cov = R_psi.T @ speed_cov @ R_psi
@@ -1086,6 +1355,60 @@ class RelativeTrackingObservation(ObservationType):
         return norm_obs
 
 
+class MPCParameterObservation(ObservationType):
+    """Observation containing the MPC parameters. Used together with the MPC action defined in https://github.com/NTNU-Autoship-Internal/rlmpc/blob/main/rlmpc/action.py"""
+
+    def __init__(
+        self,
+        env: "COLAVEnvironment",
+    ) -> None:
+        super().__init__(env)
+        assert self.env.ownship is not None, "Ownship is not defined"
+        assert self.env.action_type.mpc is not None, "MPC not defined in action type"
+        self.name = "MPCParameterObservation"
+        self.mpc_parameter_ranges, self.mpc_parameter_incr_ranges, self.mpc_parameter_lengths = (
+            self.env.action_type.mpc_params.get_adjustable_parameter_info()
+        )
+        self.mpc_param_list = env.action_type.mpc_param_list
+
+        offset = 0
+        self.mpc_parameter_indices = {}
+        for param in self.mpc_param_list:
+            self.mpc_parameter_indices[param] = offset
+            offset += self.mpc_parameter_lengths[param]
+        self.num_adjustable_mpc_params = offset
+
+    def space(self) -> gym.spaces.Space:
+        return gym.spaces.Box(low=-1.0, high=1.0, shape=(self.num_adjustable_mpc_params,), dtype=np.float32)
+
+    def normalize(self, obs: Observation) -> Observation:
+        return mhm.normalize_mpc_param(
+            x=obs,
+            param_list=self.mpc_param_list,
+            parameter_ranges=self.mpc_parameter_ranges,
+            parameter_lengths=self.mpc_parameter_lengths,
+            parameter_indices=self.mpc_parameter_indices,
+        )
+
+    def unnormalize(self, obs: Observation) -> Observation:
+        return mhm.unnormalize_mpc_param(
+            x=obs,
+            param_list=self.mpc_param_list,
+            parameter_ranges=self.mpc_parameter_ranges,
+            parameter_lengths=self.mpc_parameter_lengths,
+            parameter_indices=self.mpc_parameter_indices,
+        )
+
+    def observe(self) -> Observation:
+        assert hasattr(self.env.action_type, "mpc"), "Must have MPC in the action type for this observation to work!"
+        if self.env.time < 0.0001:
+            obs = self.env.action_type.mpc_adjustable_params_arr_init
+        else:
+            obs = self.env.action_type.mpc.get_adjustable_mpc_params()
+        normalized_obs = self.normalize(obs)
+        return normalized_obs
+
+
 def observation_factory(
     env: "COLAVEnvironment", observation_type: str | dict = "time_observation", **kwargs
 ) -> ObservationType:
@@ -1105,6 +1428,8 @@ def observation_factory(
         return PathRelativeNavigationObservation(env, **kwargs)
     elif "navigation_3dof_state_observation" in observation_type:
         return Navigation3DOFStateObservation(env, **kwargs)
+    elif "navigation_path_observation" in observation_type:
+        return NavigationPathObservation(env, **kwargs)
     elif "perception_image_observation" in observation_type:
         return PerceptionImageObservation(env, **kwargs)
     elif "relative_tracking_observation" in observation_type:
@@ -1117,6 +1442,8 @@ def observation_factory(
         return DisturbanceObservation(env, **kwargs)
     elif "time_observation" in observation_type:
         return TimeObservation(env, **kwargs)
+    elif "mpc_parameter_observation" in observation_type:
+        return MPCParameterObservation(env, **kwargs)
     elif "dict_observation" in observation_type:
         return DictObservation(env, observation_type["dict_observation"], **kwargs)
     else:

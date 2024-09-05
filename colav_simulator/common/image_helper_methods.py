@@ -7,6 +7,7 @@
     Author: Trym Tengesdal
 """
 
+import io
 import time
 from pathlib import Path
 from typing import Tuple
@@ -15,12 +16,74 @@ import colav_simulator.common.math_functions as mf
 import cv2
 import matplotlib
 import matplotlib.pyplot as plt
-
-matplotlib.use("Agg")
 import numpy as np
 import skimage.morphology as ski_morph
 import skimage.util as ski_util
-from matplotlib import gridspec
+from matplotlib import animation, gridspec
+from PIL import Image, ImageOps
+
+# Depending on your OS, you might need to change these paths
+plt.rcParams["animation.convert_path"] = "/usr/bin/convert"
+plt.rcParams["animation.ffmpeg_path"] = "/usr/bin/ffmpeg"
+
+
+def mplfig2np(fig: matplotlib.figure.Figure) -> np.ndarray:
+    """Convert a matplotlib figure to a numpy array.
+
+    Args:
+        fig (matplotlib.figure.Figure): The figure to convert.
+
+    Returns:
+        np.ndarray: The figure as a numpy array.
+    """
+    with io.BytesIO() as buff:
+        fig.savefig(buff, format="rgba")
+        buff.seek(0)
+        data = np.frombuffer(buff.getvalue(), dtype=np.uint8)
+    buff.close()
+    w, h = fig.canvas.get_width_height()
+    im = data.reshape((int(w), int(h), -1)).copy()
+    im = im[:, :, :3]
+    return im
+
+
+def save_frames_as_gif(frame_list: list, filename: Path, verbose: bool = False, crop: bool = True) -> None:
+    # if crop:
+    #     cropped_frame_list = []
+    #     for frame in frame_list:
+    #         img = Image.fromarray(frame)
+    #         bbox = ImageOps.invert(img).getbbox()
+    #         cropped = img.crop(bbox)
+    #         cropped_frame_list.append(np.array(cropped, dtype=np.uint8))
+    #     frame_list = cropped_frame_list
+
+    # Mess with this to change frame size
+    dpi = 64.0
+    fig = plt.figure(figsize=(frame_list[0].shape[1] / dpi, frame_list[0].shape[0] / dpi), dpi=dpi)
+    plt.axis("off")
+    fig.tight_layout()
+    patch = plt.imshow(frame_list[0])
+
+    def init():
+        patch.set_data(frame_list[0])
+        return (patch,)
+
+    def animate(i):
+        patch.set_data(frame_list[i])
+        return (patch,)
+
+    anim = animation.FuncAnimation(
+        fig=fig, func=animate, init_func=init, blit=True, frames=len(frame_list), interval=50, repeat=True
+    )
+    anim.save(
+        filename=filename.as_posix(),
+        writer=animation.PillowWriter(fps=20),
+        dpi=dpi,
+        progress_callback=lambda i, n: print(f"Saving frame {i} of {n}") if verbose else None,
+    )
+    plt.close(fig)
+    if verbose:
+        print(f"Saved gif to {filename}")
 
 
 def find_edges(img: np.ndarray, *, bw_threshold: int = 150, limits: Tuple[float, float] = (0.2, 0.15)) -> list:
@@ -240,8 +303,7 @@ if __name__ == "__main__":
     # plt.imshow(img_cropped)
     # cv2.imwrite(str(filename_out), img_cropped)
 
-    data_dir = Path("/home/doctor/Desktop/machine_learning/data/vae/")
-    # data_dir = Path("/Users/trtengesdal/Desktop/machine_learning/data/vae/")
+    data_dir = Path.home() / "Desktop/machine_learning/perception_vae/"
     npy_filename = "perception_images_rogaland_random_everything_vecenv_test"
 
     npy_file = np.load(data_dir / (npy_filename + ".npy"), mmap_mode="r", allow_pickle=True).astype(np.uint8)

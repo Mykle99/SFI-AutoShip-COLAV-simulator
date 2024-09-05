@@ -33,7 +33,7 @@ class ISensor(ABC):
 
     @abstractmethod
     def reset(self, seed: int | None) -> None:
-        """Resets the sensor to its initial state."""
+        """Resets the sensor to its initial state, optionally seeding the rng for measurement generation."""
 
     @abstractmethod
     def seed(self, seed: int | None) -> None:
@@ -60,37 +60,39 @@ class ISensor(ABC):
 class RadarParams:
     """Configuration parameters for a radar sensor."""
 
-    max_range: float = 500.0
+    max_range: float = 1000.0
     measurement_rate: float = 1.0
-    R_cartesian: np.ndarray = field(default_factory=lambda: np.diag([5.0**2, 5.0**2]))  # meas cov used by the tracker
-    R_cartesian_true: np.ndarray = field(
+    R_ne: np.ndarray = field(
         default_factory=lambda: np.diag([5.0**2, 5.0**2])
-    )  # meas cov that reflects the true noise characteristics. Used to generate measurements
-    generate_clutter: bool = field(default_factory=lambda: False)
+    )  # north-east meas cov used by the tracker
+    R_ne_true: np.ndarray = field(
+        default_factory=lambda: np.diag([5.0**2, 5.0**2])
+    )  #  north-east meas cov that reflects the true noise characteristics. Used to generate measurements
+    generate_clutter: bool = False
     clutter_cardinality_expectation: int = 5
-    P_D : float = 1.0
-    include_polar_meas_noise: bool = field(default_factory=lambda: False)
-    R_polar:np.ndarray = field(default_factory=lambda: np.diag([8.0**2, ((np.pi/180)*1)**2]))
+    detection_probability: float = 0.9
+    include_polar_meas_noise: bool = False
+    R_polar_true: np.ndarray = field(default_factory=lambda: np.diag([8.0**2, ((np.pi / 180) * 1) ** 2]))  # meas cov
 
     @classmethod
     def from_dict(self, config_dict: dict):
         return RadarParams(
             max_range=config_dict["max_range"],
             measurement_rate=config_dict["measurement_rate"],
-            R_cartesian=np.diag(config_dict["R_cartesian"]),
-            R_cartesian_true=np.diag(config_dict["R_cartesian_true"]),
+            R_ne=np.diag(config_dict["R_ne"]),
+            R_ne_true=np.diag(config_dict["R_ne_true"]),
             generate_clutter=config_dict["generate_clutter"],
             clutter_cardinality_expectation=config_dict["clutter_cardinality_expectation"],
-            P_D = config_dict["P_D"],
-            include_polar_meas_noise = config_dict["include_polar_meas_noise"],
-            R_polar = np.diag(config_dict["R_polar"])
+            detection_probability=config_dict["detection_probability"],
+            include_polar_meas_noise=config_dict["include_polar_meas_noise"],
+            R_polar_true=np.diag(config_dict["R_polar_true"]),
         )
 
     def to_dict(self) -> dict:
         output_dict = asdict(self)
-        output_dict["R_cartesian"] = self.R_cartesian.diagonal().tolist()
-        output_dict["R_cartesian_true"] = self.R_cartesian_true.diagonal().tolist()
-        output_dict["R_polar"] = self.R_polar.diagonal().tolist()
+        output_dict["R_ne"] = self.R_ne.diagonal().tolist()
+        output_dict["R_ne_true"] = self.R_ne_true.diagonal().tolist()
+        output_dict["R_polar_true"] = self.R_polar_true.diagonal().tolist()
         return output_dict
 
 
@@ -189,8 +191,6 @@ class SensorSuiteBuilder:
 class Radar(ISensor):
     """Implements functionality for a radar sensor."""
 
-    # TODO: Implement clutter measurements and detection probability
-
     def __init__(self, params: RadarParams = RadarParams()) -> None:
         self.type: str = "radar"
         self._H: np.ndarray = np.array([[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]])
@@ -208,7 +208,7 @@ class Radar(ISensor):
         self._rng = np.random.default_rng(seed)
 
     def R(self, xs: np.ndarray) -> np.ndarray:
-        return self._params.R_cartesian
+        return self._params.R_ne_true
 
     def H(self, xs: np.ndarray) -> np.ndarray:
         return self._H
@@ -223,40 +223,47 @@ class Radar(ISensor):
         if not self._initialized or t < 0.0001:
             self._prev_meas_time = t
             self._initialized = True
-        if (t - self._prev_meas_time) >= (1.0 / self._params.measurement_rate):
-            for i, (_, xs, length, width) in enumerate(true_do_states):
-                dist_ownship_to_do = np.sqrt((xs[0] - ownship_state[0]) ** 2 + (xs[1] - ownship_state[1]) ** 2)
-                do_detection_check = np.random.random()
-                if dist_ownship_to_do <= self._params.max_range and do_detection_check <= self._params.P_D:
-                    cartesian_meas_noise = np.random.multivariate_normal(np.zeros(2), self._params.R_cartesian_true)
-                    if (self._params.include_polar_meas_noise):
-                        angle_ownship_to_do = np.arctan2(xs[1] - ownship_state[1], xs[0] - ownship_state[0]) # Angle between ownship and dymanic obstacle
-                        ownship_to_do_polar_coords = np.array([dist_ownship_to_do, angle_ownship_to_do]) # Polar coords of dynamic obstacle relative to ownship 
-                        polar_meas_noise = np.random.multivariate_normal(np.zeros(2), self._params.R_polar) # Polar measurement noise
-                        distorted_ownship_to_do_polar_coords = ownship_to_do_polar_coords + polar_meas_noise # Polar coords of dynamic obstacle relative to ownship distorted by polar measurement noise
-                        distorted_ownship_to_do_cart_coords = np.array(
-                            [
-                                ownship_state[0] + distorted_ownship_to_do_polar_coords[0]*np.cos(distorted_ownship_to_do_polar_coords[1]), 
-                                ownship_state[1] + distorted_ownship_to_do_polar_coords[0]*np.sin(distorted_ownship_to_do_polar_coords[1])
-                                ]
-                            ) # Cartesian coords of dynamic obstacle distorted by polar measurement noise
-                        polar_meas_noise_cart_coords = distorted_ownship_to_do_cart_coords - self.h(xs) # cartesian coords of polar measurement noise relative to dynamic obstacle
-                        meas_noise = (polar_meas_noise_cart_coords + cartesian_meas_noise)/2 # Midpoint between cartesian and polar measurement noise in cartesian coords
-                    else:
-                        meas_noise = cartesian_meas_noise
 
-                    z = self.h(xs) + meas_noise
+        detection_probability = self._params.detection_probability if self._params.generate_clutter else 1.0
+
+        if (t - self._prev_meas_time) < (1.0 / self._params.measurement_rate):
+            return [(do_tup[0], np.nan * np.ones(2)) for do_tup in true_do_states]
+
+        for i, (do_idx, do_state, do_length, do_width) in enumerate(true_do_states):
+            dist_ownship_to_do = np.sqrt((do_state[0] - ownship_state[0]) ** 2 + (do_state[1] - ownship_state[1]) ** 2)
+            do_detection_check = self._rng.random()
+            if dist_ownship_to_do <= self._params.max_range and do_detection_check <= detection_probability:
+                cartesian_meas_noise = self._rng.multivariate_normal(np.zeros(2), self._params.R_ne_true)
+                if self._params.include_polar_meas_noise:
+                    angle_ownship_to_do = np.arctan2(do_state[1] - ownship_state[1], do_state[0] - ownship_state[0])
+                    ownship_to_do_polar_coords = np.array([dist_ownship_to_do, angle_ownship_to_do])
+                    polar_meas_noise = self._rng.multivariate_normal(np.zeros(2), self._params.R_polar_true)
+                    distorted_ownship_to_do_polar_coords = ownship_to_do_polar_coords + polar_meas_noise
+                    distorted_ownship_to_do_cart_coords = np.array(
+                        [
+                            ownship_state[0]
+                            + distorted_ownship_to_do_polar_coords[0] * np.cos(distorted_ownship_to_do_polar_coords[1]),
+                            ownship_state[1]
+                            + distorted_ownship_to_do_polar_coords[0] * np.sin(distorted_ownship_to_do_polar_coords[1]),
+                        ]
+                    )  # Cartesian coords of dynamic obstacle distorted by polar measurement noise
+                    polar_meas_noise_cart_coords = distorted_ownship_to_do_cart_coords - self.h(
+                        do_state
+                    )  # cartesian coords of polar measurement noise relative to dynamic obstacle
+                    meas_noise = (
+                        polar_meas_noise_cart_coords + cartesian_meas_noise
+                    ) / 2  # Midpoint between cartesian and polar measurement noise in cartesian coords
                 else:
-                    z = np.nan * np.ones(2)
-                measurements.append(z)
-            self._prev_meas_time = t
-            if self._params.generate_clutter:
-                z_clutter = self.generate_clutter(t, ownship_state)
-                measurements.extend(z_clutter)
-        else:
-            for i, (_, xs, length, width) in enumerate(true_do_states):
+                    meas_noise = cartesian_meas_noise
+
+                z = self.h(do_state) + meas_noise
+            else:
                 z = np.nan * np.ones(2)
-                measurements.append(z)
+            measurements.append((do_idx, z))
+
+        self._prev_meas_time = t
+        z_clutter = self.generate_clutter(ownship_state)
+        measurements.extend(z_clutter)
         return measurements
     
     def generate_clutter(self, t: float, ownship_state: np.ndarray) -> Optional[list]:
@@ -272,9 +279,35 @@ class Radar(ISensor):
             return clutter
         return
 
+    def generate_clutter(self, ownship_state: np.ndarray) -> List[Tuple[int, np.ndarray]]:
+        """Generates clutter measurements around the ownship using a Poisson distribution.
+
+        Args:
+            ownship_state (np.ndarray): The ownship state vector on the form [x, y, Vx, Vy].
+
+        Returns:
+            List[Tuple[int, np.ndarray]]: List of clutter measurements with -1 as the index (non-existent dynamic obstacle).
+        """
+        clutter = []
+        if not self._params.generate_clutter:
+            return clutter
+
+        cardinality = self._rng.poisson(self._params.clutter_cardinality_expectation, 1)
+        r = self._params.max_range * np.sqrt(self._rng.uniform(0, 1, cardinality))
+        theta = self._rng.uniform(0, 2 * np.pi, cardinality)
+        x = r * np.cos(theta) + ownship_state[0]
+        y = r * np.sin(theta) + ownship_state[1]
+        for i in range(cardinality[0]):
+            clutter.append((-1, np.array([x[i], y[i]])))
+        return clutter
+
     @property
     def max_range(self) -> float:
         return self._params.max_range
+
+    @property
+    def params(self) -> RadarParams:
+        return self._params
 
 
 class AIS(ISensor):
@@ -343,7 +376,7 @@ class AIS(ISensor):
             dist_ownship_to_do = np.sqrt((do_state[0] - ownship_state[0]) ** 2 + (do_state[1] - ownship_state[1]) ** 2)
 
             if (t - self._prev_meas_time[i]) >= (
-                1.0 / self.measurement_rate(do_state)
+                1.0 / self._measurement_rate(do_state)
             ) and dist_ownship_to_do <= self._params.max_range:
                 z = self.h(do_state) + self._rng.multivariate_normal(np.zeros(4), self._params.R_true)
                 self._prev_meas_time[i] = t
@@ -353,7 +386,7 @@ class AIS(ISensor):
 
         return measurements
 
-    def measurement_rate(self, xs: np.ndarray) -> float:
+    def _measurement_rate(self, xs: np.ndarray) -> float:
         """Returns the measurement rate for the input state. This depends on
         the input state's speed and AIS class (and also if the course is changing,
         but this is not considered here (yet)).
@@ -385,3 +418,7 @@ class AIS(ISensor):
     @property
     def max_range(self) -> float:
         return self._params.max_range
+
+    @property
+    def params(self) -> AISParams:
+        return self._params

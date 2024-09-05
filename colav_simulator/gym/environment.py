@@ -9,7 +9,9 @@
 """
 
 import pathlib
-from typing import List, Optional, Tuple
+import time as timelib
+import tracemalloc
+from typing import Any, List, Optional, Tuple
 
 import colav_simulator.core.ship as cs_ship
 import colav_simulator.core.stochasticity as stoch
@@ -31,7 +33,7 @@ class COLAVEnvironment(gym.Env):
     The environment is centered on the own-ship (single-agent), and consists of a maritime scenario with possibly multiple other vessels and grounding hazards from ENC data.
     """
 
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 30, "video.frames_per_second": 30}
+    metadata = {"render_modes": ["human", "rgb_array", "none"], "render_fps": 30, "video.frames_per_second": 30}
     observation_type: csgym_obs.ObservationType
     action_type: csgym_action.ActionType
     scenario_config: sc.ScenarioConfig
@@ -47,22 +49,29 @@ class COLAVEnvironment(gym.Env):
         rewarder_class: Optional[rw.IReward] = rw.Rewarder,
         rewarder_kwargs: Optional[dict] = {},
         action_type: Optional[str] = None,
+        action_type_class: Optional[csgym_action.ActionType] = None,
+        action_kwargs: Optional[dict] = {},
         action_sample_time: Optional[float] = None,
         observation_type: Optional[dict | str] = None,
+        observation_kwargs: Optional[dict] = {},
         render_mode: Optional[str] = "rgb_array",
         render_update_rate: Optional[float] = None,
-        test_mode: Optional[bool] = False,
         verbose: Optional[bool] = True,
         show_loaded_scenario_data: Optional[bool] = False,
         shuffle_loaded_scenario_data: Optional[bool] = False,
         max_number_of_episodes: Optional[int] = None,
         merge_loaded_scenario_episodes: Optional[bool] = False,
-        identifier: Optional[int | str] = None,
+        identifier: Optional[int | str] = "COLAVEnv",
         seed: Optional[int] = None,
         **kwargs,
     ) -> None:
         """Initializes the environment.
         Note that the scenario config object takes precedence over the scenario config file, which again takes precedence over the scenario file list.
+
+        For action and observation types defined under `gym/action` and `gym/observation`, specify usage of these by providing the class name as a lower snake case string with the `action_type` and `observation_type` parameters.
+
+        For external action types and the reward class you want to use, provide the class as an argument with the `action_type_class` and `rewarder_class` parameters, respectively.
+
 
         Args:
             simulator_config (Optional[cssim.Config]): Simulator configuration.
@@ -73,16 +82,18 @@ class COLAVEnvironment(gym.Env):
             rewarder_class (Optional[rw.IReward]): Rewarder class.
             rewarder_kwargs (Optional[dict]): Rewarder keyword arguments.
             action_type (Optional[str]): Action type.
+            action_type_class (Optional[csgym_action.ActionType]): Action type class. Typically used for externally developed action types.
+            action_kwargs (Optional[dict]): Keyword arguments passed to the action type upon construction.
             action_sample_time (Optional[float]): Action sample time, i.e. the time between each applied action.
             observation_type (Optional[dict | str]): Observation type.
+            observation_kwargs (Optional[dict]): Keyword arguments passed to the observation type.
             render_mode (Optional[str]): Render mode.
             render_update_rate (Optional[float]): Render update rate.
-            test_mode (Optional[bool]): If test mode is true, the environment will not be automatically reset due to too low cumulative reward or too large distance from the path.
             verbose (Optional[bool]): Wheter to print debugging info or not.
             show_loaded_scenario_data (Optional[bool]): Whether to show the loaded scenario data or not.
             shuffle_loaded_scenario_data (Optional[bool]): Whether to shuffle the loaded scenario data or not.
             max_number_of_episodes (Optional[int]): Maximum number of episodes to generate/load. Defaults to none (i.e. no limit).
-            merge_loaded_scenario_episodes (Optional[bool]): Whether to merge the loaded scenario episodes into one scenario or not.
+            merge_loaded_scenario_episodes (Optional[bool]): Whether to merge multiple loaded scenario episodes into one scenario or not.
             identifier (Optional[int | str]): Identifier for the environment.
             seed (Optional[int]): Seed for the random number generator.
         """
@@ -92,9 +103,14 @@ class COLAVEnvironment(gym.Env):
         ), "Either scenario config or scenario file folder must be provided!"
 
         # Dummy spaces, must be overwritten by _define_spaces after call to reset the environment
+        self.action_kwargs = action_kwargs
+        self.action_type_class = action_type_class
         self.action_space = gym.spaces.Box(low=-1, high=1, shape=(1, 1), dtype=np.float32)
+        self.action_type = None
+        self.observation_kwargs = observation_kwargs
         self.observation_space = gym.spaces.Box(low=-1, high=1, shape=(1, 1), dtype=np.float32)
-
+        self.observation_type = None
+        self.simulator_config: cssim.Config = simulator_config
         self.simulator: cssim.Simulator = cssim.Simulator(config=simulator_config)
         self.scenario_generator: sg.ScenarioGenerator = sg.ScenarioGenerator(
             config=scenario_generator_config, seed=seed
@@ -117,12 +133,8 @@ class COLAVEnvironment(gym.Env):
         self.ownship: Optional[cs_ship.Ship] = None
         self.render_mode = render_mode
         self.render_update_rate = render_update_rate
-        self.viewer2d = self.simulator.visualizer
-        self._live_plot_closed: bool = True
-        self.test_mode = test_mode
         self.verbose: bool = verbose
         self.current_frame: np.ndarray = np.zeros((1, 1, 3), dtype=np.uint8)
-
         if self.scenario_file_folder is not None:
             self._load(
                 scenario_file_folder=self.scenario_file_folder,
@@ -163,28 +175,47 @@ class COLAVEnvironment(gym.Env):
             action_sample_time if action_sample_time is not None else self.scenario_config.rl.action_sample_time
         )
 
-        self.rewarder = rewarder_class(env=self, **rewarder_kwargs)
+        self.rewarder_class = rewarder_class
+        self.rewarder_kwargs = rewarder_kwargs
+        self.rewarder = self.rewarder_class(env=self, **self.rewarder_kwargs)
+
+        # if self.episodes == 0:
+        #     self._clear_render()
+        #     tracemalloc.start(40)
+        #     self.t_prev_malloc_snapshot = tracemalloc.take_snapshot()
+
         self._define_spaces()
 
     def close(self):
         """Closes the environment. To be called after usage."""
         self.done = True
-        if self.viewer2d is not None:
-            self.viewer2d.close_live_plot()
-            self._live_plot_closed = True
+        if self.simulator.visualizer is not None:
+            self.simulator.visualizer.close_live_plot()  # not thread safe unless the matplotlib backend is set to 'Agg'
+            self.simulator.visualizer = None
 
     def _define_spaces(self) -> None:
         """Defines the action and observation spaces."""
         assert self.scenario_config is not None, "Scenario config not initialized!"
 
+        if self.action_type is not None and self.observation_type is not None:
+            return
+
         self.dt_action = self.dt_action if self.dt_action is not None else self.simulator.dt
         assert (
             self.dt_action % self.simulator.dt == 0.0
         ), "Action sampling time must be a multiple of simulator time step!"
-        self.action_type = csgym_action.action_factory(self, self.action_type_cfg, sample_time=self.dt_action)
-        self.observation_type = csgym_obs.observation_factory(self, self.observation_type_cfg)
 
+        if self.action_type_class is None:
+            self.action_type = csgym_action.action_factory(
+                self, self.action_type_cfg, sample_time=self.dt_action, **self.action_kwargs
+            )
+        else:
+            self.action_type = self.action_type_class(self, sample_time=self.dt_action, **self.action_kwargs)
         self.action_space = self.action_type.space()
+
+        self.observation_type = csgym_obs.observation_factory(
+            self, self.observation_type_cfg, **self.observation_kwargs
+        )
         self.observation_space = self.observation_type.space()
 
     def _is_terminated(self) -> bool:
@@ -193,7 +224,7 @@ class COLAVEnvironment(gym.Env):
         Returns:
             bool: Whether the current state is a terminal state
         """
-        return bool(self.simulator.is_terminated(self.verbose))
+        return bool(self.simulator.is_terminated(self.verbose, prefix_string=f"[{self.env_id.upper()}] "))
 
     def _is_truncated(self) -> bool:
         """Check whether the current state is a truncated state (time limit reached).
@@ -201,7 +232,7 @@ class COLAVEnvironment(gym.Env):
         Returns:
             bool: Whether the current state is a truncated state
         """
-        return bool(self.simulator.is_truncated(self.verbose))
+        return bool(self.simulator.is_truncated(self.verbose, prefix_string=f"[{self.env_id.upper()}] "))
 
     def _load(
         self,
@@ -267,18 +298,19 @@ class COLAVEnvironment(gym.Env):
             )
         self.scenario_config = self.scenario_data_tup[0][0]["config"]
 
-    def _info(self, obs: csgym_obs.Observation, action: Optional[csgym_action.Action] = None) -> dict:
+    def _info(
+        self, obs: csgym_obs.Observation, action: csgym_action.Action, action_result: csgym_action.ActionResult
+    ) -> dict:
         """Returns a dictionary of additional information as defined by the environment.
 
         Args:
             obs (Observation): Observation vector from the environment
             action (Optional[Action]): Action vector applied by the agent.
+            action_result (ActionResult): Result of the action applied by the agent.
 
         Returns:
             dict: Dictionary of additional information
         """
-        unnormalized_obs = self.observation_type.unnormalize(obs)
-        unnormalized_action = self.action_type.unnormalize(action) if action is not None else None
         self.last_info = {
             "episode_name": self.simulator.sconfig.name,
             "duration": self.simulator.t,
@@ -289,15 +321,18 @@ class COLAVEnvironment(gym.Env):
             "grounding": self.simulator.determine_ship_grounding(ship_idx=0),
             "distance_to_collision": np.min(self.simulator.distance_to_nearby_vessels(ship_idx=0)),
             "distance_to_grounding": self.simulator.distance_to_grounding(ship_idx=0),
+            "actor_failure": not action_result.success,
             "truncated": self._is_truncated(),
-            # "unnormalized_action": unnormalized_action,
-            # "unnormalized_obs": unnormalized_obs,
             "os_heading": self.ownship.heading,
             "os_speed": self.ownship.speed,
             "os_course": self.ownship.course,
             "reward": self.last_reward,
             "reward_components": self.rewarder.get_last_rewards_as_dict(),
-            "render_frame": self.current_frame if self.render_mode == "rgb_array" else None,
+            "render_frame": self.simulator.visualizer.get_live_plot_image(),
+            "action": action,
+            "actor_info": action_result.info,
+            "observation": obs,
+            "disturbance": self.simulator.disturbance.get() if self.simulator.disturbance is not None else None,
         }
         return self.last_info
 
@@ -326,24 +361,47 @@ class COLAVEnvironment(gym.Env):
             Tuple[Observation, dict]: Initial observation and additional information
         """
         self.seed(seed=seed, options=options)
+        # t_now = tracemalloc.take_snapshot()
+        # stats = t_now.compare_to(self.t_prev_malloc_snapshot, "traceback")
+        # print(f"Memory usage env {self.env_id}:")
+        # # for stat in stats[:5]:
+        # #     print(stat)
+
+        # for entry in stats[:7]:
+        #     print("\nEntry: {}".format(entry))
+        #     print("Traceback:")
+        #     for line in entry.traceback:
+        #         print("  {}".format(line))
+        # print("----------------------------------------------------------------------------")
+
         self.steps = 0  # Actions performed, not necessarily equal to the simulator steps
         self.last_reward = 0.0
         self.done = False
 
         if self.episodes == self.n_episodes or self.scenario_data_tup[0] == []:
-            self._generate(
-                scenario_config=self.scenario_config,
-                reload_map=False,
-                max_number_of_episodes=self.max_number_of_episodes,
-            )
-            self.episodes = 0
+            if self.scenario_file_folder is not None:
+                self._load(
+                    scenario_file_folder=self.scenario_file_folder,
+                    reload_map=self.reload_map,
+                    show=False,
+                    shuffle=True,
+                    merge_loaded_scenario_episodes=True,
+                    max_number_of_episodes=self.max_number_of_episodes,
+                )
+                self.loaded_scenario_data = True
+            else:
+                self._generate(
+                    scenario_config=self.scenario_config,
+                    reload_map=self.reload_map,
+                    max_number_of_episodes=self.max_number_of_episodes,
+                )
 
         assert self.scenario_config is not None, "Scenario config not initialized!"
         (scenario_episode_list, scenario_enc) = self.scenario_data_tup
 
         episode_data = scenario_episode_list.pop(0)
 
-        episode_data["disturbance"].disable_wind()
+        # episode_data["disturbance"].disable_wind()
         self.simulator.initialize_scenario_episode(
             ship_list=episode_data["ship_list"],
             sconfig=episode_data["config"],
@@ -357,7 +415,11 @@ class COLAVEnvironment(gym.Env):
         self._init_render()
 
         obs = self.observation_type.observe()
-        info = self._info(obs, action=None)
+        info = self._info(
+            obs,
+            action=np.zeros(self.action_space.shape[0]),
+            action_result=csgym_action.ActionResult(success=True, info={}),
+        )
 
         self.episodes += 1  # Episodes performed
         return obs, info
@@ -377,37 +439,42 @@ class COLAVEnvironment(gym.Env):
             "applied": False
         }  # Used for action types where it is important to know if the action has been applied
         for _ in range(n_steps_between_actions):
-            self.action_type.act(action, **action_kwargs)
+            action_result = self.action_type.act(action, **action_kwargs)
             action_kwargs["applied"] = True
 
             _ = self.simulator.step(remote_actor=True)
 
             terminated = self._is_terminated()
             truncated = self._is_truncated()
+            if not action_result.success:
+                print(f"[{self.env_id.upper()}] Actor failure at t = {self.time}!")
+
+            terminated = terminated or not action_result.success
             if terminated or truncated:
                 break
 
         obs = self.observation_type.observe()
-        rewarder_kwargs = {"num_steps": self.steps}
+        rewarder_kwargs = {"num_steps": self.steps, "truncated": truncated, "terminated": terminated}
         reward = self.rewarder(obs, action, **rewarder_kwargs)
         self.last_reward = reward
 
-        info = self._info(obs, action)
+        info = self._info(obs, action, action_result)
         if terminated or truncated:
             self.terminal_info = info
 
         self.steps += 1
-
         return obs, reward, terminated, truncated, info
 
     def _init_render(self) -> None:
         """Initializes the renderer."""
-        if self.render_mode == "human" or self.render_mode == "rgb_array":
-            self.viewer2d.toggle_liveplot_visibility(show=True)
+        if self.render_mode == "rgb_array":
+            self.simulator.visualizer = None
+            self.simulator.visualizer = cssim.viz.Visualizer(config=self.simulator.config.visualizer)
+            self.simulator.visualizer.toggle_liveplot_visibility(show=True)
             if self.render_update_rate is not None:
-                self.viewer2d.set_update_rate(self.render_update_rate)
-            self.viewer2d.init_live_plot(self.enc, self.simulator.ship_list, fignum=self.env_id)
-            self.viewer2d.update_live_plot(
+                self.simulator.visualizer.set_update_rate(self.render_update_rate)
+            self.simulator.visualizer.init_live_plot(self.enc, self.simulator.ship_list, fignum=self.env_id)
+            self.simulator.visualizer.update_live_plot(
                 self.simulator.t,
                 self.enc,
                 self.simulator.ship_list,
@@ -415,16 +482,13 @@ class COLAVEnvironment(gym.Env):
                 self.simulator.disturbance.get() if self.simulator.disturbance is not None else None,
                 remote_actor=True,
             )
-            self._live_plot_closed = False
 
     def render(self):
         """Renders the environment in 2D."""
         img = None
-        if self._live_plot_closed:
-            self._init_render()
-
+        # t_now = time.time()
         if self.render_mode == "rgb_array":
-            self.viewer2d.update_live_plot(
+            self.simulator.visualizer.update_live_plot(
                 self.simulator.t,
                 self.enc,
                 self.simulator.ship_list,
@@ -432,20 +496,20 @@ class COLAVEnvironment(gym.Env):
                 self.simulator.disturbance.get() if self.simulator.disturbance is not None else None,
                 remote_actor=True,
             )
-            self.current_frame = self.viewer2d.get_live_plot_image()
-            img = self.current_frame
+            img = self.simulator.visualizer.get_live_plot_image()
+        # print(f"Render time env {self.env_id}: {time.time() - t_now}")
         return img
 
     @property
     def liveplot_image(self) -> np.ndarray:
         """The current live plot image."""
-        if self.viewer2d is not None and self.render_mode == "rgb_array":
-            return self.viewer2d.get_live_plot_image()
+        if self.simulator.visualizer is not None and self.render_mode == "rgb_array":
+            return self.simulator.visualizer.get_live_plot_image()
 
     @property
     def liveplot_zoom_width(self) -> float:
         """The width of the live plot."""
-        return self.viewer2d.zoom_window_width
+        return self.simulator.visualizer.zoom_window_width
 
     @property
     def enc(self) -> senc.ENC:
@@ -481,6 +545,11 @@ class COLAVEnvironment(gym.Env):
     def relevant_grounding_hazards(self) -> list:
         """The nearby ownship grounding hazards in the environment."""
         return self.simulator.relevant_grounding_hazards
+
+    @property
+    def relevant_grounding_hazards_as_union(self) -> list:
+        """The nearby ownship grounding hazards in the environment as a single multipolygon"""
+        return self.simulator.relevant_grounding_hazards_as_union
 
     @property
     def disturbance(self) -> stoch.Disturbance | None:

@@ -10,7 +10,7 @@
 import math
 import os.path
 from datetime import datetime
-from typing import Any, Tuple
+from typing import Any, Dict, List, Tuple
 from zoneinfo import ZoneInfo
 
 import colav_simulator.common.map_functions as mapf
@@ -18,9 +18,96 @@ import colav_simulator.common.math_functions as mf
 import colav_simulator.common.vessel_data as vd
 import numpy as np
 import pandas as pd
+import psutil
 import shapely.geometry as geometry
 from scipy.interpolate import interp1d
 from scipy.stats import chi2
+
+
+def print_resource_usage() -> None:
+    memusage = psutil.virtual_memory()
+    cpuusage = psutil.cpu_percent()
+    print(f"[System] memory usage: {memusage.percent}% | CPU usage: {cpuusage}%")
+
+
+def print_process_memory_usage(prefix_str: str) -> None:
+    """Prints the memory usage of the current process.
+
+    Args:
+        prefix_str (str): Prefix string to print before the memory usage.
+    """
+    process = psutil.Process(os.getpid())
+    print(f"[Process {os.getpid()}] {prefix_str} Memory usage: {process.memory_info().rss / 1024 ** 2:.2f} MB")
+
+
+def normalize_mpc_param(
+    x: np.ndarray,
+    param_list: List[str],
+    parameter_ranges: Dict[str, Any],
+    parameter_lengths: Dict[str, Any],
+    parameter_indices: Dict[str, Any],
+) -> np.ndarray:
+    """Normalize the input parameter.
+
+    Args:
+        x (np.ndarray): The unnormalized parameter
+        param_list (List[str]): The list of parameters to map.
+        parameter_ranges (Dict[str, Any]): The parameter ranges.
+        parameter_lengths (Dict[str, Any]): The parameter lengths.
+        parameter_indices (Dict[str, Any]): The parameter indices.
+
+    Returns:
+        np.ndarray: The normalized parameter
+    """
+    x_norm = np.zeros_like(x, dtype=np.float32)
+    for param_name in param_list:
+        param_range = parameter_ranges[param_name]
+        param_length = parameter_lengths[param_name]
+        pindx = parameter_indices[param_name]
+        x_param = x[pindx : pindx + param_length].copy()
+
+        for j in range(len(x_param)):  # pylint: disable=consider-using-enumerate
+            if param_name == "Q_p":
+                x_param[j] = mf.linear_map(x_param[j], tuple(param_range[j]), (-1.0, 1.0))
+            else:
+                x_param[j] = mf.linear_map(x_param[j], tuple(param_range), (-1.0, 1.0))
+        x_norm[pindx : pindx + param_length] = x_param
+    return x_norm
+
+
+def unnormalize_mpc_param(
+    x: np.ndarray,
+    param_list: List[str],
+    parameter_ranges: Dict[str, Any],
+    parameter_lengths: Dict[str, Any],
+    parameter_indices: Dict[str, Any],
+) -> np.ndarray:
+    """Unnormalize the input parameter.
+
+    Args:
+        x (np.ndarray): The normalized parameter
+        param_list (List[str]): The list of parameters to map.
+        parameter_ranges (Dict[str, Any]): The parameter ranges.
+        parameter_lengths (Dict[str, Any]): The parameter lengths.
+        parameter_indices (Dict[str, Any]): The parameter indices.
+
+    Returns:
+        np.ndarray: The unnormalized output as a numpy array
+    """
+    x_unnorm = np.zeros_like(x, dtype=np.float32)
+    for param_name in param_list:
+        param_range = parameter_ranges[param_name]
+        param_length = parameter_lengths[param_name]
+        pindx = parameter_indices[param_name]
+        x_param = x[pindx : pindx + param_length].copy()
+
+        for j in range(len(x_param)):  # pylint: disable=consider-using-enumerate
+            if param_name == "Q_p":
+                x_param[j] = mf.linear_map(x_param[j], (-1.0, 1.0), tuple(param_range[j]))
+            else:
+                x_param[j] = mf.linear_map(x_param[j], (-1.0, 1.0), tuple(param_range))
+        x_unnorm[pindx : pindx + param_length] = x_param
+    return x_unnorm
 
 
 def get_ship_ais_df_list_from_ais_df(df: pd.DataFrame) -> list:
@@ -368,7 +455,9 @@ def compute_vessel_pair_cpa(
     return t_cpa, d_cpa, d_cpa_vec
 
 
-def convert_simulation_data_to_vessel_data(sim_data: pd.DataFrame, ship_info: dict, utm_zone: int) -> list:
+def convert_simulation_data_to_vessel_data(
+    sim_data: pd.DataFrame, ship_info: Dict[str, Any], utm_zone: int
+) -> List[vd.VesselData]:
     """Converts simulation data to vessel data.
 
     Args:
@@ -377,7 +466,7 @@ def convert_simulation_data_to_vessel_data(sim_data: pd.DataFrame, ship_info: di
         utm_zone (int): UTM zone used for the planar xy coordinate system.
 
     Returns:
-        list: List of vessel data.
+        List[vd.VesselData]: List of vessel data containers
     """
     vessels = []
     identifier = 0
@@ -392,6 +481,8 @@ def convert_simulation_data_to_vessel_data(sim_data: pd.DataFrame, ship_info: di
         )
 
         X, vessel.timestamps, vessel.datetimes_utc = extract_trajectory_data_from_dataframe(sim_data[name])
+        if X.size == 0:
+            continue
 
         vessel.first_valid_idx, vessel.last_valid_idx = index_of_first_and_last_non_nan(X[0, :])
         n_msgs = len(vessel.timestamps)
@@ -437,11 +528,8 @@ def convert_simulation_data_to_vessel_data(sim_data: pd.DataFrame, ship_info: di
 
         # print(f"Vessel {identifier} travelled a distance of {vessel.travel_dist} m")
         # print(f"Vessel status: {vessel.status}")
-
         vessels.append(vessel)
-
         identifier += 1
-
     return vessels
 
 
@@ -524,14 +612,16 @@ def extract_trajectory_data_from_dataframe(ship_df: pd.DataFrame) -> Tuple[np.nd
     Returns:
         Tuple[np.ndarray, list, list]: Tuple of array containing the trajectory and corresponding relative simulation timestamps and UTC timestamps.
     """
-    X = np.zeros((6, len(ship_df)))
+    state_list = []
     timestamps = []
     datetimes_utc = []
-    for k, ship_df_k in enumerate(ship_df):
-        X[:, k] = ship_df_k["state"]
-        timestamps.append(float(ship_df_k["timestamp"]))
-        datetime_utc = datetime.strptime(ship_df_k["date_time_utc"], "%d.%m.%Y %H:%M:%S")
-        datetimes_utc.append(datetime_utc)
+    for _, ship_df_k in enumerate(ship_df):
+        if pd.notna(ship_df_k) and ship_df_k:
+            state_list.append(ship_df_k["state"])
+            timestamps.append(float(ship_df_k["timestamp"]))
+            datetime_utc = datetime.strptime(ship_df_k["date_time_utc"], "%d.%m.%Y %H:%M:%S")
+            datetimes_utc.append(datetime_utc)
+    X = np.array(state_list).T
     return X, timestamps, datetimes_utc
 
 
@@ -732,7 +822,7 @@ def create_probability_ellipse(P: np.ndarray, probability: float = 0.99) -> Tupl
     b = chisquare_val * math.sqrt(smallest_eigenval)
 
     # the ellipse in "body" x and y coordinates
-    t = np.linspace(0, 2.01 * np.pi, 100)
+    t = np.linspace(0, 2.0 * np.pi, 200)
     x = a * np.cos(t)
     y = b * np.sin(t)
 

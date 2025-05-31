@@ -7,27 +7,25 @@
 """
 
 from pathlib import Path
-import sys
-
-vimmjipda_path = Path(__file__).resolve().parents[2] / "vimmjipda"
-sys.path.append(str(vimmjipda_path))
 
 import colav_simulator.common.paths as dp
 import colav_simulator.core.colav.colav_interface as ci
 import colav_simulator.scenario_generator as sg
 import colav_simulator.simulator as sim
-import vimmjipda.vimmjipda_tracker_interface as vti # type: ignore
+import vimmjipda.vimmjipda_tracker_interface as vti
 
 
-def test_simulator() -> None:
-    vimmjipda_config_path = vimmjipda_path / "config/vimmjipda.yaml" # Path to the VIMMJIPDA config file
+def test_simulator_vimmjipda() -> None:
+    vimmjipda_config_path = (
+        Path.home() / "Desktop/autotuning/autotuning/vimmjipda/config/vimmjipda.yaml"
+    )  # Path to the vimmjipda.yaml file, modify for your system
     vimmjipda_params = vti.VIMMJIPDAParams.from_yaml(vimmjipda_config_path)
     vimmjipda_tracker = vti.VIMMJIPDA(params=vimmjipda_params)
     sbmpc_obj = ci.SBMPCWrapper()
 
     scenario_generator = sg.ScenarioGenerator()
     simconfig = sim.Config.from_file(dp.simulator_config)
-    simconfig.visualizer.zoom_window_width = 1000.0
+    simconfig.visualizer.zoom_window_width = 1500.0
     simconfig.visualizer.show_liveplot_target_tracks = True
     simconfig.visualizer.show_liveplot_measurements = True
     simulator = sim.Simulator(config=simconfig)
@@ -48,8 +46,8 @@ def test_simulator() -> None:
         delete_existing_files=True,
     )
     scenario_data_list = [scenario_data]
-    output2 = simulator.run(scenario_data_list, colav_systems=[(0, sbmpc_obj)])  # , trackers=[(0, vimmjipda_tracker)])
+    output2 = simulator.run(scenario_data_list, colav_systems=[(0, sbmpc_obj)], trackers=[(0, vimmjipda_tracker)])
 
 
 if __name__ == "__main__":
-    test_simulator()
+    test_simulator_vimmjipda()

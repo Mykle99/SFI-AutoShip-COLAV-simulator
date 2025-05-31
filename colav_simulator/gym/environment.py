@@ -122,6 +122,7 @@ class COLAVEnvironment(gym.Env):
         self._has_init_generated: bool = False
         self.max_number_of_episodes: Optional[int] = max_number_of_episodes
 
+        self._seed: Optional[int] = seed
         self.env_id = identifier
         self.done = False
         self.steps: int = 0
@@ -330,6 +331,8 @@ class COLAVEnvironment(gym.Env):
             "reward_components": self.rewarder.get_last_rewards_as_dict(),
             "render_frame": self.simulator.visualizer.get_live_plot_image(),
             "action": action,
+            "unnorm_action": self.action_type.unnormalize(action),
+            "os_state": self.ownship.state,
             "actor_info": action_result.info,
             "observation": obs,
             "disturbance": self.simulator.disturbance.get() if self.simulator.disturbance is not None else None,
@@ -343,8 +346,10 @@ class COLAVEnvironment(gym.Env):
             seed (Optional[int]): Seed for the random number generator.
             options (Optional[dict]): Options for the environment.
         """
+        self._seed = seed if seed is not None else self._seed
         super().reset(seed=None, options=options)
-        self.scenario_generator.seed(seed=seed)
+        self._seed = seed if seed is not None else self._seed
+        self.scenario_generator.seed(seed=self._seed)
 
     def reset(
         self,
@@ -407,7 +412,7 @@ class COLAVEnvironment(gym.Env):
             sconfig=episode_data["config"],
             enc=scenario_enc,
             disturbance=episode_data["disturbance"],
-            seed=seed,
+            seed=self._seed,
         )
         self.ownship = self.simulator.ownship
 
@@ -473,7 +478,9 @@ class COLAVEnvironment(gym.Env):
             self.simulator.visualizer.toggle_liveplot_visibility(show=True)
             if self.render_update_rate is not None:
                 self.simulator.visualizer.set_update_rate(self.render_update_rate)
-            self.simulator.visualizer.init_live_plot(self.enc, self.simulator.ship_list, fignum=self.env_id)
+            self.simulator.visualizer.init_live_plot(
+                self.enc, self.simulator.ship_list, fignum=self.env_id, disable_frame_storage=True
+            )
             self.simulator.visualizer.update_live_plot(
                 self.simulator.t,
                 self.enc,

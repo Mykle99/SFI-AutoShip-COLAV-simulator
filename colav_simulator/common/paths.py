@@ -10,7 +10,8 @@
 import pathlib
 import sys
 
-local_root = pathlib.Path(sys.argv[0]).absolute().parents[1]
+#local_root = pathlib.Path(sys.argv[0]).absolute().parents[1]
+local_root = pathlib.Path(__file__).absolute().parents[2]
 lib_root = pathlib.Path(__file__).absolute().parents[2]
 config = local_root / "config"
 package = lib_root / "colav_simulator"

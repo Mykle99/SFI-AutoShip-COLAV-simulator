@@ -11,15 +11,17 @@ The framework is mainly developed and tested under a Unix-based operating system
 [![python version](https://img.shields.io/badge/python-3.11-blue)]()
 
 <p align="center">
-    <img src="https://github.com/NTNU-Autoship-Internal/colav_simulator/blob/main/mpc_teaser.gif?raw=true" width="1000px"><br/>
-    <em>Example run of an MPC-based COLAV planner in the simulator.</em>
+    <img src="https://github.com/NTNU-TTO/SFI-AutoShip-COLAV-simulator/blob/main/gym_env_teaser.gif?raw=true" width="1000px"><br/>
+    <em>Example visualization of a DRL-based MPC algorithm run in multiple evaluation episodes using the COLAVEnvironment Gymnasium functionality.</em>
 </p>
 <p align="center">
-    <img src="https://github.com/NTNU-Autoship-Internal/colav_simulator/blob/main/teaser.gif?raw=true" width="1000px"><br/>
-    <em>An episode sample from the COLAVEnvironment.</em>
+    <img src="https://github.com/NTNU-TTO/SFI-AutoShip-COLAV-simulator/blob/main/teaser.gif?raw=true" width="1000px"><br/>
+    <em>Another episode sample from the COLAVEnvironment.</em>
 </p>
 
 ## Citation
+This code was developed through the Autoship Centre for Research-based Innovation (SFI Autoship) based in Trondheim. 
+
 If you are using the `colav_simulator` in your work, please use the following citation:
 ```bibtex
 @Article{Tengesdal2023sfse,
@@ -34,23 +36,26 @@ If you are using the `colav_simulator` in your work, please use the following ci
 }
 ```
 
-If you are using `RRTs` for ship behavior generation in your work, please also use the following citation:
+If you are using `RRTs` from `rrt-rs` for ship behavior generation in your work based on [A Comparative Study of Rapidly-exploring Random Tree Algorithms Applied to Ship Trajectory Planning and Behavior Generation](https://link.springer.com/article/10.1007/s10846-025-02222-7), please also use the following citation:
 ```bibtex
-@Article{Tengesdal2024csrrt,
+@article{tengesdal2025comparative,
   title={A Comparative Study of Rapidly-exploring Random Tree Algorithms Applied to Ship Trajectory Planning and Behavior Generation},
   author={Tengesdal, Trym and Pedersen, Tom Arne and Johansen, Tor Arne},
-  journal={arXiv preprint arXiv:2403.01194},
-  year={2024}
+  journal={Journal of Intelligent \& Robotic Systems},
+  volume={111},
+  number={1},
+  pages={1--19},
+  year={2025},
+  publisher={Springer}
 }
 ```
 
 ## Dependencies
 Are all outlined in setup.cfg. Non-pip packages to install are
 
-- seacharts: https://github.com/trymte/seacharts for ENC support
-- rrt-rs: https://github.com/NTNU-Autoship-Internal/rrt-rs optionally for ship behavior generation
-- vimmjipda: <https://github.com/NTNU-Autoship-Internal/vimmjipda> for Multi-Target Tracking functionality.
-- colav_evaluation_tool: https://github.com/trymte/colav_evaluation_tool (optional dependency only for the `test_simulation_and_evaluation.py` test file)
+- rrt-rs: https://github.com/NTNU-Autoship-Internal/rrt-rs optionally for ship behavior generation. To be open sourced.
+- vimmjipda: <https://github.com/NTNU-Autoship-Internal/vimmjipda> for Multi-Target Tracking functionality. To be open sourced.
+- colav_evaluation_tool: https://github.com/trymte/colav_evaluation_tool (optional dependency only for the `test_simulation_and_evaluation.py` test file). Closed source.
 
 ## Generic Install Instructions
 `seacharts`, `vimmjipda` and the `colav_evaluation_tool` (optional) are non-pip package dependencies in the simulator. Install these as editable packages first using `pip install -e .` in their respective root folders. For `rrt-rs` (also optional), follow the install instructions at <https://github.com/NTNU-Autoship-Internal/rrt-rs>. Then, install this simulator package using the same `pip install -e .` command inside the `colav_simulator` root folder. All of these packages should be installed using the same Python environment (e.g. a virtual or Conda environment).
@@ -145,7 +150,7 @@ It is also a good idea to keep the features small, so that they are easy to test
 
 ### Workflow
 
-When you're developing a feature (or beginning your thesis work) based on the simulator, the workflow begins by checking out the main branch, and creating a new branch from there.
+When you're developing a feature based on the simulator, the workflow begins by checking out the main branch, and creating a new branch from there.
 
 #### Retrieving main branch
 
@@ -318,7 +323,7 @@ The `colav_interface.py` provides an interface for arbitrary `COLAV` planning al
 - Improve random generation of vessel COLREGS scenarios. E.g. use AIS data to sample "realistic" vessel trajectories based on a fitted distribution for historical vessel positions and velocities.
 - Improve live-visualization in the simulator w.r.t. code readability and run-time. Switch out matplotlib for a faster backend. Matplotlib is known to leak memory, so switching it for e.g. PyGtGraph <https://www.pyqtgraph.org/> or VisPy <https://vispy.org/> is promising.
 - Add functionality for saving simulation results to file.
-- Streamline installation of `seacharts`, `colav_evaluation_tool` and the `colav_simulator` through a script.
+- Streamline installation of all external repo dependencies through a script.
 - Separate the large `schemas/scenario.yaml` validation schema into multiple sub-schemas for easier readability.
-- Create IsaacGym-wrapper for GPU-enabled parallelized RL.
+- Create IsaacGym-wrapper for GPU-enabled parallelized RL in the environment.
 

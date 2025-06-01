@@ -26,6 +26,7 @@ import math
 from typing import Optional, Tuple
 from cartopy.feature import ShapelyFeature
 from osgeo import osr
+osr.UseExceptions() # To silence a FutureWarning about GDAL 4.0 + errors will not fail silently
 from seacharts.enc import ENC
 from shapely import affinity, strtree
 from shapely.geometry import GeometryCollection, LineString, MultiLineString, MultiPolygon, Point, Polygon
